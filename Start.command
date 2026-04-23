@@ -9,6 +9,15 @@ RUNTIME_DIR="$SCRIPT_DIR/.runtime"
 PID_FILE="$RUNTIME_DIR/server.pid"
 LOG_FILE="$RUNTIME_DIR/server.log"
 UV_BIN=""
+APP_PID=""
+
+cleanup() {
+  if [[ -n "$APP_PID" ]]; then
+    rm -f "$PID_FILE"
+  fi
+}
+
+trap cleanup EXIT
 
 resolve_uv_bin() {
   if [[ -x "$SCRIPT_DIR/.local/bin/uv" ]]; then
@@ -64,9 +73,9 @@ fi
 "$UV_BIN" pip install --python "$SCRIPT_DIR/.venv/bin/python" -r "$SCRIPT_DIR/requirements.txt"
 
 echo "Launching app ..."
-nohup "$SCRIPT_DIR/.venv/bin/python" "$SCRIPT_DIR/app.py" >"$LOG_FILE" 2>&1 &
-NEW_PID=$!
-echo "$NEW_PID" > "$PID_FILE"
+"$SCRIPT_DIR/.venv/bin/python" "$SCRIPT_DIR/app.py" >"$LOG_FILE" 2>&1 &
+APP_PID=$!
+echo "$APP_PID" > "$PID_FILE"
 
 # Wait for app to come up and then open browser.
 for _ in {1..30}; do
@@ -78,5 +87,7 @@ for _ in {1..30}; do
   sleep 0.5
 done
 
-echo "SRT Coder running. Log: $LOG_FILE"
+echo "SRT Coder running in this terminal (PID $APP_PID). Log: $LOG_FILE"
+echo "Close this terminal window to stop SRT Coder."
 open "$APP_URL"
+wait "$APP_PID"
