@@ -89,14 +89,11 @@ def render_analysis_page(analysis_id: str) -> None:
     top_nav()
     _install_selection_cache_script()
 
-    with ui.column().classes("w-full max-w-[1800px] mx-auto mt-6 gap-3"):
+    with ui.column().classes("w-full max-w-[1800px] mx-auto mt-6 gap-2"):
         ui.button("Back to interview list", on_click=lambda: ui.navigate.to("/")).props("flat")
         ui.label("Analysis Workspace").classes("text-2xl font-semibold")
         ui.label(f"Analysis: {analysis.name or analysis.analysis_id}").classes("text-sm text-gray-700")
         ui.label(f"Interview file: {selected_file}").classes("text-sm text-gray-700")
-
-        status_label = ui.label("").classes("text-sm text-gray-700")
-        count_label = ui.label("Objects in this analysis: 0").classes("text-sm text-gray-700")
 
         state: dict = {
             "transcript": None,
@@ -104,23 +101,30 @@ def render_analysis_page(analysis_id: str) -> None:
             "pending_span": None,
             "pending_span_sig": None,
             "selection_revision_seen": -1,
+            "compact_mode": True,
         }
 
-        with ui.row().classes("w-full items-start no-wrap gap-4"):
-            left_col = ui.column().classes("w-1/3 gap-2")
-            right_col = ui.column().classes("w-2/3 gap-2")
+        with ui.row().classes("w-full items-center justify-between gap-2 flex-wrap"):
+            status_label = ui.label("").classes("text-sm text-gray-700")
+            with ui.row().classes("items-center gap-2"):
+                count_label = ui.label("Objects in this analysis: 0").classes("text-sm text-gray-700")
+                compact_toggle = ui.switch("Compact mode", value=True).props("dense")
+
+        with ui.row().classes("w-full items-start no-wrap gap-2"):
+            left_col = ui.column().classes("w-1/3 gap-1")
+            right_col = ui.column().classes("w-2/3 gap-1")
 
         with left_col:
-            transcript_scroll = ui.scroll_area().classes("w-full h-[72vh] border rounded p-3 bg-gray-50")
+            transcript_scroll = ui.scroll_area().classes("w-full h-[72vh] border rounded p-2 bg-gray-50")
 
         with right_col:
             with ui.row().classes("w-full flex-wrap gap-2"):
-                ui.button("New Differentiation", on_click=lambda: _create_object("differentiation"))
-                ui.button("New Comparison", on_click=lambda: _create_object("comparison"))
-                ui.button("New Nuance", on_click=lambda: _create_object("nuance"))
-            objects_scroll = ui.scroll_area().classes("w-full h-[72vh] border rounded p-3 bg-gray-50")
+                ui.button("New Differentiation", on_click=lambda: _create_object("differentiation")).props("dense")
+                ui.button("New Comparison", on_click=lambda: _create_object("comparison")).props("dense")
+                ui.button("New Nuance", on_click=lambda: _create_object("nuance")).props("dense")
+            objects_scroll = ui.scroll_area().classes("w-full h-[72vh] border rounded p-2 bg-gray-50")
             with objects_scroll:
-                objects_container = ui.column().classes("w-full gap-3")
+                objects_container = ui.column().classes("w-full gap-2")
 
         def _refresh_entries() -> None:
             entries = list_entries_for_analysis_and_file(
@@ -147,6 +151,15 @@ def render_analysis_page(analysis_id: str) -> None:
         def _count_spans_for_key(entry: CodingEntry, span_key: str) -> int:
             spans = (entry.field_spans or {}).get(span_key) or []
             return len(spans)
+
+        def _is_compact() -> bool:
+            return bool(state.get("compact_mode", True))
+
+        def _compact_header_value(value: str | None, *, max_len: int = 80) -> str:
+            text = (value or "").strip()
+            if not text:
+                return ""
+            return text if len(text) <= max_len else f"{text[:max_len].rstrip()}..."
 
         def _count_total_spans(entry: CodingEntry) -> int:
             total = 0
@@ -398,13 +411,29 @@ def render_analysis_page(analysis_id: str) -> None:
             segment_id = target.get("start_segment_id")
             if not segment_id:
                 return
+            await _jump_to_segment_id(str(segment_id))
+
+        async def _jump_to_segment_id(segment_id: str) -> None:
+            if not segment_id:
+                return
             segment_id_js = str(segment_id).replace("\\", "\\\\").replace('"', '\\"')
             await ui.run_javascript(
                 f"""
                 (() => {{
-                  const el = document.getElementById("segment-{segment_id_js}");
+                  const sid = "{segment_id_js}";
+                  const byId = document.getElementById(`segment-${{sid}}`);
+                  const byData = document.querySelector(`[data-segment-id="${{sid}}"]`);
+                  const el = byId || byData;
                   if (!el) return;
-                  el.scrollIntoView({{ behavior: "smooth", block: "center" }});
+                  const scroller = el.closest('.q-scrollarea__container');
+                  if (scroller) {{
+                    const elRect = el.getBoundingClientRect();
+                    const scRect = scroller.getBoundingClientRect();
+                    const delta = (elRect.top - scRect.top) - (scRect.height / 2) + (elRect.height / 2);
+                    scroller.scrollTo({{ top: scroller.scrollTop + delta, behavior: "smooth" }});
+                  }} else {{
+                    el.scrollIntoView({{ behavior: "smooth", block: "center" }});
+                  }}
                   const prev = el.style.boxShadow;
                   el.style.boxShadow = "0 0 0 2px #60a5fa inset";
                   setTimeout(() => {{
@@ -418,33 +447,18 @@ def render_analysis_page(analysis_id: str) -> None:
             segment_id = span.get("start_segment_id")
             if not segment_id:
                 return
-            segment_id_js = str(segment_id).replace("\\", "\\\\").replace('"', '\\"')
-            await ui.run_javascript(
-                f"""
-                (() => {{
-                  const el = document.getElementById("segment-{segment_id_js}");
-                  if (!el) return;
-                  el.scrollIntoView({{ behavior: "smooth", block: "center" }});
-                  const prev = el.style.boxShadow;
-                  el.style.boxShadow = "0 0 0 2px #60a5fa inset";
-                  setTimeout(() => {{
-                    el.style.boxShadow = prev;
-                  }}, 900);
-                }})();
-                """
-            )
+            await _jump_to_segment_id(str(segment_id))
 
         def _bind_span_jump(element, span: dict) -> None:
             async def _on_click(_e=None) -> None:
                 await _jump_to_specific_span(span)
-            # stop bubbling to avoid accidental parent interactions
-            element.on("mousedown.stop", lambda _e: None)
-            element.on("click.stop", _on_click)
+            element.on("click", _on_click)
 
         def _render_field_spans(entry: CodingEntry, span_key: str, *, inside_box: bool = False) -> int:
             spans = (entry.field_spans or {}).get(span_key) or []
             if not spans:
                 return 0
+
             if not inside_box:
                 ui.label(f"Spans ({len(spans)})").classes("text-[11px] text-gray-600")
             for idx, span in enumerate(spans, start=1):
@@ -462,6 +476,16 @@ def render_analysis_page(analysis_id: str) -> None:
                 _bind_span_jump(box, span)
             return len(spans)
 
+        def _render_field_pair(
+            left_renderer: Callable[[], None],
+            right_renderer: Callable[[], None],
+        ) -> None:
+            with ui.row().classes("w-full flex-wrap gap-2 items-start"):
+                with ui.column().classes("w-full flex-1 min-w-[300px] gap-1"):
+                    left_renderer()
+                with ui.column().classes("w-full flex-1 min-w-[300px] gap-1"):
+                    right_renderer()
+
         def _render_locked_field(
             *,
             label: str,
@@ -471,12 +495,18 @@ def render_analysis_page(analysis_id: str) -> None:
             mutator: Callable[[Comparison | None, Differentiation | None, Nuance | None, str], None],
             on_clear: Callable[[], None] | None = None,
         ) -> None:
+            label_class = "text-[11px] text-gray-700" if _is_compact() else "text-xs text-gray-700"
             with ui.row().classes("w-full items-center justify-between"):
-                ui.label(label).classes("text-xs text-gray-700")
+                ui.label(label).classes(label_class)
                 if on_clear is not None:
                     _render_hold_to_clear_button(on_clear)
+            box_class = (
+                "w-full min-h-[30px] border rounded px-2 py-1 bg-gray-100 text-gray-900 whitespace-pre-wrap"
+                if _is_compact()
+                else "w-full min-h-[42px] border rounded px-3 py-2 bg-gray-100 text-gray-900 whitespace-pre-wrap"
+            )
             box = ui.element("div").classes(
-                "w-full min-h-[42px] border rounded px-3 py-2 bg-gray-100 text-gray-900 whitespace-pre-wrap"
+                box_class
             )
             span_count = _count_spans_for_key(entry, span_key)
             with box:
@@ -484,7 +514,11 @@ def render_analysis_page(analysis_id: str) -> None:
                     _render_field_spans(entry, span_key, inside_box=True)
 
                 add_box = ui.element("div").classes(
-                    "w-full min-h-[34px] border border-dashed rounded mt-2 px-2 py-2 bg-white/70 cursor-pointer"
+                    (
+                        "w-full min-h-[22px] border border-dashed rounded mt-1 px-2 py-1 bg-white/70 cursor-pointer"
+                        if _is_compact()
+                        else "w-full min-h-[34px] border border-dashed rounded mt-2 px-2 py-2 bg-white/70 cursor-pointer"
+                    )
                 )
                 with add_box:
                     # Keep this visually empty by default, while preserving fixed clickable area.
@@ -507,8 +541,10 @@ def render_analysis_page(analysis_id: str) -> None:
             mutator: Callable[[Comparison | None, Differentiation | None, Nuance | None, str], None],
         ) -> None:
             with ui.row().classes("w-full items-center justify-between"):
-                ui.label(label).classes("text-xs text-gray-700")
+                ui.label(label).classes("text-[11px] text-gray-700" if _is_compact() else "text-xs text-gray-700")
             cmt = ui.input().classes("w-full")
+            if _is_compact():
+                cmt.props("dense")
             cmt.set_value(value or "")
             cmt.on("blur", lambda _e, el=cmt: on_save(el.value))
             _bind_span_append(
@@ -532,7 +568,7 @@ def render_analysis_page(analysis_id: str) -> None:
 
             def _reset_visual() -> None:
                 fill.style("width:0%;pointer-events:none;")
-                btn.set_text("Hold 1.2s to clear")
+                btn.set_text("Hold to clear" if _is_compact() else "Hold 1.2s to clear")
 
             async def _run_hold_progress(token: int) -> None:
                 started = time.monotonic()
@@ -541,7 +577,7 @@ def render_analysis_page(analysis_id: str) -> None:
                     progress = max(0.0, min(1.0, elapsed / 1.2))
                     remaining = max(0.0, 1.2 - elapsed)
                     fill.style(f"width:{progress * 100:.1f}%;pointer-events:none;")
-                    btn.set_text(f"Hold {remaining:.1f}s to clear")
+                    btn.set_text(f"Hold {remaining:.1f}s" if _is_compact() else f"Hold {remaining:.1f}s to clear")
                     if progress >= 1.0:
                         state_hold["pressed"] = False
                         on_clear()
@@ -569,6 +605,12 @@ def render_analysis_page(analysis_id: str) -> None:
                 entry.differentiation.model_copy(deep=True)
                 if entry.differentiation
                 else Differentiation()
+            )
+            header_value = _compact_header_value(differentiation.thing_being_considered_extract)
+            header_label = (
+                f"Differentiation: {header_value}"
+                if header_value
+                else "Differentiation"
             )
 
             def save_field(name: str, value: str | None) -> None:
@@ -611,28 +653,30 @@ def render_analysis_page(analysis_id: str) -> None:
 
             def _render_text_field(field: str) -> None:
                 comment_field = f"{field}_comment"
-                _render_locked_field(
-                    label=_display_name(field),
-                    value=getattr(differentiation, field),
-                    entry=entry,
-                    span_key=f"differentiation.{field}",
-                    on_clear=lambda f=field: clear_field(f),
-                    mutator=lambda _cmp, dif, _nua, text, f=field: setattr(
-                        dif,
-                        f,
-                        _append_text(getattr(dif, f), text),
+                _render_field_pair(
+                    lambda: _render_locked_field(
+                        label=_display_name(field),
+                        value=getattr(differentiation, field),
+                        entry=entry,
+                        span_key=f"differentiation.{field}",
+                        on_clear=lambda f=field: clear_field(f),
+                        mutator=lambda _cmp, dif, _nua, text, f=field: setattr(
+                            dif,
+                            f,
+                            _append_text(getattr(dif, f), text),
+                        ),
                     ),
-                )
-                _render_comment_field(
-                    label=_display_name(comment_field),
-                    value=getattr(differentiation, comment_field),
-                    on_save=lambda v, f=comment_field: save_field(f, v),
-                    entry=entry,
-                    span_key=f"differentiation.{comment_field}",
-                    mutator=lambda _cmp, dif, _nua, text, f=comment_field: setattr(
-                        dif,
-                        f,
-                        _append_text(getattr(dif, f), text),
+                    lambda: _render_comment_field(
+                        label=_display_name(comment_field),
+                        value=getattr(differentiation, comment_field),
+                        on_save=lambda v, f=comment_field: save_field(f, v),
+                        entry=entry,
+                        span_key=f"differentiation.{comment_field}",
+                        mutator=lambda _cmp, dif, _nua, text, f=comment_field: setattr(
+                            dif,
+                            f,
+                            _append_text(getattr(dif, f), text),
+                        ),
                     ),
                 )
 
@@ -675,14 +719,16 @@ def render_analysis_page(analysis_id: str) -> None:
                     field_spans=entry.field_spans or {},
                 )
 
-            with ui.card().classes("w-full shadow-sm"):
+            with ui.expansion(header_label, value=True).props("dense switch-toggle-side").classes(
+                "w-full border rounded bg-white px-2 py-1"
+            ):
                 with ui.row().classes("w-full items-center justify-between"):
-                    ui.label("Differentiation").classes("text-lg font-semibold")
                     ui.button(
                         "Delete object",
                         on_click=lambda: _request_delete_entry(entry, "differentiation"),
-                    ).props("outline color=negative")
-                ui.label(f"ID: {entry.coding_id}").classes("text-xs text-gray-500")
+                    ).props("outline dense color=negative")
+                if not _is_compact():
+                    ui.label(f"ID: {entry.coding_id}").classes("text-xs text-gray-500")
 
                 for field in [
                     "thing_being_considered_extract",
@@ -695,51 +741,59 @@ def render_analysis_page(analysis_id: str) -> None:
                     _render_text_field(field)
 
                 ui.separator()
-                ui.label(_display_name("perspectives_extract")).classes("text-sm font-medium")
+                with ui.row().classes("w-full items-center justify-between"):
+                    ui.label(_display_name("perspectives_extract")).classes("text-sm font-medium")
+                    ui.button("New perspective", on_click=add_perspective).props("outline dense")
                 rows = list(differentiation.perspectives_extract or [])
                 for idx, row in enumerate(rows):
-                    with ui.card().classes("w-full border shadow-none"):
-                        ui.label(f"Perspective {idx + 1}").classes("text-sm font-semibold")
+                    with ui.element("div").classes("w-full border rounded p-2 bg-white"):
+                        with ui.row().classes("w-full items-center justify-between"):
+                            ui.label(f"Perspective {idx + 1}").classes("text-sm font-semibold")
+                            ui.button(
+                                "Remove perspective",
+                                on_click=lambda _e, i=idx: remove_perspective(i),
+                            ).props("flat dense color=negative")
                         for field in [
                             "what_is_this_perspective_extract",
                             "why_is_it_relevant_to_take_this_perspective_extract",
                             "how_does_this_particular_perspective_add_complexity_or_difficulty_to_the_thing_being_considered_extract",
                             "what_are_the_implications_extract",
                         ]:
-                            _render_locked_field(
-                                label=_display_name(field),
-                                value=getattr(row, field),
-                                entry=entry,
-                                span_key=f"differentiation.perspectives_extract[{idx}].{field}",
-                                on_clear=lambda i=idx, f=field: clear_perspective_field(i, f),
-                                mutator=lambda _cmp, dif, _nua, text, i=idx, f=field: _append_to_perspective_field(
-                                    dif,
-                                    i,
-                                    f,
-                                    text,
-                                ),
-                            )
-
                             cmt_field = f"{field}_comment"
-                            _render_comment_field(
-                                label=_display_name(cmt_field),
-                                value=getattr(row, cmt_field),
-                                on_save=lambda v, i=idx, f=cmt_field: save_perspective_field(i, f, v),
-                                entry=entry,
-                                span_key=f"differentiation.perspectives_extract[{idx}].{cmt_field}",
-                                mutator=lambda _cmp, dif, _nua, text, i=idx, f=cmt_field: _append_to_perspective_field(
-                                    dif,
-                                    i,
-                                    f,
-                                    text,
+                            _render_field_pair(
+                                lambda: _render_locked_field(
+                                    label=_display_name(field),
+                                    value=getattr(row, field),
+                                    entry=entry,
+                                    span_key=f"differentiation.perspectives_extract[{idx}].{field}",
+                                    on_clear=lambda i=idx, f=field: clear_perspective_field(i, f),
+                                    mutator=lambda _cmp, dif, _nua, text, i=idx, f=field: _append_to_perspective_field(
+                                        dif,
+                                        i,
+                                        f,
+                                        text,
+                                    ),
+                                ),
+                                lambda: _render_comment_field(
+                                    label=_display_name(cmt_field),
+                                    value=getattr(row, cmt_field),
+                                    on_save=lambda v, i=idx, f=cmt_field: save_perspective_field(i, f, v),
+                                    entry=entry,
+                                    span_key=f"differentiation.perspectives_extract[{idx}].{cmt_field}",
+                                    mutator=lambda _cmp, dif, _nua, text, i=idx, f=cmt_field: _append_to_perspective_field(
+                                        dif,
+                                        i,
+                                        f,
+                                        text,
+                                    ),
                                 ),
                             )
-
-                        ui.button("Remove perspective", on_click=lambda _e, i=idx: remove_perspective(i)).props("flat")
-
-                ui.button("New perspective", on_click=add_perspective).props("outline")
         def _render_nuance_card(entry: CodingEntry) -> None:
             nuance = entry.nuance.model_copy(deep=True) if entry.nuance else Nuance()
+            header_value = _compact_header_value(
+                nuance.outcome_something_that_can_happen_or_has_happened_event_something_that_can_be_or_is_the_case_state_extract
+            )
+            header_label = f"Nuance: {header_value}" if header_value else "Nuance"
 
             def save_field(name: str, value: str | None) -> None:
                 setattr(nuance, name, (value or "").strip() or None)
@@ -781,28 +835,30 @@ def render_analysis_page(analysis_id: str) -> None:
 
             def _render_text_field(field: str) -> None:
                 comment_field = f"{field}_comment"
-                _render_locked_field(
-                    label=_display_name(field),
-                    value=getattr(nuance, field),
-                    entry=entry,
-                    span_key=f"nuance.{field}",
-                    on_clear=lambda f=field: clear_field(f),
-                    mutator=lambda _cmp, _dif, nua, text, f=field: setattr(
-                        nua,
-                        f,
-                        _append_text(getattr(nua, f), text),
+                _render_field_pair(
+                    lambda: _render_locked_field(
+                        label=_display_name(field),
+                        value=getattr(nuance, field),
+                        entry=entry,
+                        span_key=f"nuance.{field}",
+                        on_clear=lambda f=field: clear_field(f),
+                        mutator=lambda _cmp, _dif, nua, text, f=field: setattr(
+                            nua,
+                            f,
+                            _append_text(getattr(nua, f), text),
+                        ),
                     ),
-                )
-                _render_comment_field(
-                    label=_display_name(comment_field),
-                    value=getattr(nuance, comment_field),
-                    on_save=lambda v, f=comment_field: save_field(f, v),
-                    entry=entry,
-                    span_key=f"nuance.{comment_field}",
-                    mutator=lambda _cmp, _dif, nua, text, f=comment_field: setattr(
-                        nua,
-                        f,
-                        _append_text(getattr(nua, f), text),
+                    lambda: _render_comment_field(
+                        label=_display_name(comment_field),
+                        value=getattr(nuance, comment_field),
+                        on_save=lambda v, f=comment_field: save_field(f, v),
+                        entry=entry,
+                        span_key=f"nuance.{comment_field}",
+                        mutator=lambda _cmp, _dif, nua, text, f=comment_field: setattr(
+                            nua,
+                            f,
+                            _append_text(getattr(nua, f), text),
+                        ),
                     ),
                 )
 
@@ -845,14 +901,16 @@ def render_analysis_page(analysis_id: str) -> None:
                     field_spans=entry.field_spans or {},
                 )
 
-            with ui.card().classes("w-full shadow-sm"):
+            with ui.expansion(header_label, value=True).props("dense switch-toggle-side").classes(
+                "w-full border rounded bg-white px-2 py-1"
+            ):
                 with ui.row().classes("w-full items-center justify-between"):
-                    ui.label("Nuance").classes("text-lg font-semibold")
                     ui.button(
                         "Delete object",
                         on_click=lambda: _request_delete_entry(entry, "nuance"),
-                    ).props("outline color=negative")
-                ui.label(f"ID: {entry.coding_id}").classes("text-xs text-gray-500")
+                    ).props("outline dense color=negative")
+                if not _is_compact():
+                    ui.label(f"ID: {entry.coding_id}").classes("text-xs text-gray-500")
 
                 for field in [
                     "outcome_something_that_can_happen_or_has_happened_event_something_that_can_be_or_is_the_case_state_extract",
@@ -866,11 +924,18 @@ def render_analysis_page(analysis_id: str) -> None:
                     _render_text_field(field)
 
                 ui.separator()
-                ui.label(_display_name("condition_antecedent_reason")).classes("text-sm font-medium")
+                with ui.row().classes("w-full items-center justify-between"):
+                    ui.label(_display_name("condition_antecedent_reason")).classes("text-sm font-medium")
+                    ui.button("New condition antecedent reason", on_click=add_condition).props("outline dense")
                 rows = list(nuance.condition_antecedent_reason or [])
                 for idx, row in enumerate(rows):
-                    with ui.card().classes("w-full border shadow-none"):
-                        ui.label(f"Condition antecedent reason {idx + 1}").classes("text-sm font-semibold")
+                    with ui.element("div").classes("w-full border rounded p-2 bg-white"):
+                        with ui.row().classes("w-full items-center justify-between"):
+                            ui.label(f"Condition antecedent reason {idx + 1}").classes("text-sm font-semibold")
+                            ui.button(
+                                "Remove condition antecedent reason",
+                                on_click=lambda _e, i=idx: remove_condition(i),
+                            ).props("flat dense color=negative")
                         for field in [
                             "description_an_event_or_state_that_contributes_or_contributed_towards_increasing_the_likelihood_of_the_outcome_or_towards_explaining_why_it_happened_extract",
                             "direction_of_impact_increase_or_decrease_the_likelihood_extract",
@@ -878,38 +943,35 @@ def render_analysis_page(analysis_id: str) -> None:
                             "certitude_about_impact_how_likely_is_this_condition_to_impact_the_likelihood_of_the_outcome_extract",
                             "epistemic_stance_extract",
                         ]:
-                            _render_locked_field(
-                                label=_display_name(field),
-                                value=getattr(row, field),
-                                entry=entry,
-                                span_key=f"nuance.condition_antecedent_reason[{idx}].{field}",
-                                on_clear=lambda i=idx, f=field: clear_condition_field(i, f),
-                                mutator=lambda _cmp, _dif, nua, text, i=idx, f=field: _append_to_condition_field(
-                                    nua,
-                                    i,
-                                    f,
-                                    text,
-                                ),
-                            )
-
                             cmt_field = f"{field}_comment"
-                            _render_comment_field(
-                                label=_display_name(cmt_field),
-                                value=getattr(row, cmt_field),
-                                on_save=lambda v, i=idx, f=cmt_field: save_condition_field(i, f, v),
-                                entry=entry,
-                                span_key=f"nuance.condition_antecedent_reason[{idx}].{cmt_field}",
-                                mutator=lambda _cmp, _dif, nua, text, i=idx, f=cmt_field: _append_to_condition_field(
-                                    nua,
-                                    i,
-                                    f,
-                                    text,
+                            _render_field_pair(
+                                lambda: _render_locked_field(
+                                    label=_display_name(field),
+                                    value=getattr(row, field),
+                                    entry=entry,
+                                    span_key=f"nuance.condition_antecedent_reason[{idx}].{field}",
+                                    on_clear=lambda i=idx, f=field: clear_condition_field(i, f),
+                                    mutator=lambda _cmp, _dif, nua, text, i=idx, f=field: _append_to_condition_field(
+                                        nua,
+                                        i,
+                                        f,
+                                        text,
+                                    ),
+                                ),
+                                lambda: _render_comment_field(
+                                    label=_display_name(cmt_field),
+                                    value=getattr(row, cmt_field),
+                                    on_save=lambda v, i=idx, f=cmt_field: save_condition_field(i, f, v),
+                                    entry=entry,
+                                    span_key=f"nuance.condition_antecedent_reason[{idx}].{cmt_field}",
+                                    mutator=lambda _cmp, _dif, nua, text, i=idx, f=cmt_field: _append_to_condition_field(
+                                        nua,
+                                        i,
+                                        f,
+                                        text,
+                                    ),
                                 ),
                             )
-
-                        ui.button("Remove condition antecedent reason", on_click=lambda _e, i=idx: remove_condition(i)).props("flat")
-
-                ui.button("New condition antecedent reason", on_click=add_condition).props("outline")
 
         def _ensure_comparator(cmp: Comparison, index: int) -> ComparatorDetail:
             rows = list(cmp.comparators or [])
@@ -920,6 +982,8 @@ def render_analysis_page(analysis_id: str) -> None:
 
         def _render_comparison_card(entry: CodingEntry) -> None:
             comparison = entry.comparison.model_copy(deep=True) if entry.comparison else Comparison()
+            header_value = _compact_header_value(comparison.comparand)
+            header_label = f"Comparison: {header_value}" if header_value else "Comparison"
 
             def save_top_field(name: str, value: str | None) -> None:
                 setattr(comparison, name, (value or "").strip() or None)
@@ -1051,79 +1115,97 @@ def render_analysis_page(analysis_id: str) -> None:
                     field_spans=entry.field_spans or {},
                 )
 
-            with ui.card().classes("w-full shadow-sm"):
+            with ui.expansion(header_label, value=True).props("dense switch-toggle-side").classes(
+                "w-full border rounded bg-white px-2 py-1"
+            ):
                 with ui.row().classes("w-full items-center justify-between"):
-                    ui.label("Comparison").classes("text-lg font-semibold")
                     ui.button(
                         "Delete object",
                         on_click=lambda: _request_delete_entry(entry, "comparison"),
-                    ).props("outline color=negative")
-                ui.label(f"ID: {entry.coding_id}").classes("text-xs text-gray-500")
+                    ).props("outline dense color=negative")
+                if not _is_compact():
+                    ui.label(f"ID: {entry.coding_id}").classes("text-xs text-gray-500")
 
-                _render_locked_field(
-                    label=_display_name("comparand"),
-                    value=comparison.comparand,
-                    entry=entry,
-                    span_key="comparison.comparand",
-                    on_clear=lambda: clear_top_field("comparand"),
-                    mutator=lambda cmp, _dif, _nua, text: setattr(cmp, "comparand", _append_text(cmp.comparand, text)),
-                )
-
-                _render_comment_field(
-                    label=_display_name("comparand_comment"),
-                    value=comparison.comparand_comment,
-                    on_save=lambda v: save_top_field("comparand_comment", v),
-                    entry=entry,
-                    span_key="comparison.comparand_comment",
-                    mutator=lambda cmp, _dif, _nua, text: setattr(
-                        cmp,
-                        "comparand_comment",
-                        _append_text(cmp.comparand_comment, text),
+                _render_field_pair(
+                    lambda: _render_locked_field(
+                        label=_display_name("comparand"),
+                        value=comparison.comparand,
+                        entry=entry,
+                        span_key="comparison.comparand",
+                        on_clear=lambda: clear_top_field("comparand"),
+                        mutator=lambda cmp, _dif, _nua, text: setattr(
+                            cmp, "comparand", _append_text(cmp.comparand, text)
+                        ),
+                    ),
+                    lambda: _render_comment_field(
+                        label=_display_name("comparand_comment"),
+                        value=comparison.comparand_comment,
+                        on_save=lambda v: save_top_field("comparand_comment", v),
+                        entry=entry,
+                        span_key="comparison.comparand_comment",
+                        mutator=lambda cmp, _dif, _nua, text: setattr(
+                            cmp,
+                            "comparand_comment",
+                            _append_text(cmp.comparand_comment, text),
+                        ),
                     ),
                 )
 
                 ui.separator()
-                ui.label(_display_name("comparators")).classes("text-sm font-medium")
+                with ui.row().classes("w-full items-center justify-between"):
+                    ui.label(_display_name("comparators")).classes("text-sm font-medium")
+                    ui.button("New comparator", on_click=add_comparator).props("outline dense")
                 rows = list(comparison.comparators or [])
                 for idx, row in enumerate(rows):
-                    with ui.card().classes("w-full border shadow-none"):
-                        ui.label(f"Comparator {idx + 1}").classes("text-sm font-semibold")
+                    with ui.element("div").classes("w-full border rounded p-2 bg-white"):
+                        with ui.row().classes("w-full items-center justify-between"):
+                            ui.label(f"Comparator {idx + 1}").classes("text-sm font-semibold")
+                            ui.button(
+                                "Remove comparator",
+                                on_click=lambda _e, i=idx: remove_comparator(i),
+                            ).props("flat dense color=negative")
 
                         for field in ["comparator", "adjective"]:
-                            _render_locked_field(
-                                label=_display_name(field),
-                                value=getattr(row, field),
-                                entry=entry,
-                                span_key=f"comparison.comparators[{idx}].{field}",
-                                on_clear=lambda i=idx, f=field: clear_comparator_field(i, f),
-                                mutator=lambda cmp, _dif, _nua, text, i=idx, f=field: _append_to_comparator_field(
-                                    cmp,
-                                    i,
-                                    f,
-                                    text,
-                                ),
-                            )
-
                             cmt_field = f"{field}_comment"
-                            _render_comment_field(
-                                label=_display_name(cmt_field),
-                                value=getattr(row, cmt_field),
-                                on_save=lambda v, i=idx, f=cmt_field: save_comparator_field(i, f, v),
-                                entry=entry,
-                                span_key=f"comparison.comparators[{idx}].{cmt_field}",
-                                mutator=lambda cmp, _dif, _nua, text, i=idx, f=cmt_field: _append_to_comparator_field(
-                                    cmp,
-                                    i,
-                                    f,
-                                    text,
+                            _render_field_pair(
+                                lambda: _render_locked_field(
+                                    label=_display_name(field),
+                                    value=getattr(row, field),
+                                    entry=entry,
+                                    span_key=f"comparison.comparators[{idx}].{field}",
+                                    on_clear=lambda i=idx, f=field: clear_comparator_field(i, f),
+                                    mutator=lambda cmp, _dif, _nua, text, i=idx, f=field: _append_to_comparator_field(
+                                        cmp,
+                                        i,
+                                        f,
+                                        text,
+                                    ),
+                                ),
+                                lambda: _render_comment_field(
+                                    label=_display_name(cmt_field),
+                                    value=getattr(row, cmt_field),
+                                    on_save=lambda v, i=idx, f=cmt_field: save_comparator_field(i, f, v),
+                                    entry=entry,
+                                    span_key=f"comparison.comparators[{idx}].{cmt_field}",
+                                    mutator=lambda cmp, _dif, _nua, text, i=idx, f=cmt_field: _append_to_comparator_field(
+                                        cmp,
+                                        i,
+                                        f,
+                                        text,
+                                    ),
                                 ),
                             )
 
+                        with ui.row().classes("w-full items-center justify-between"):
+                            ui.label(_display_name("dimensions_or_examples")).classes("text-[11px] text-gray-700")
+                            ui.button(
+                                "New dimension or example",
+                                on_click=lambda _e, i=idx: add_dimension(i),
+                            ).props("outline dense")
                         dims = list(row.dimensions_or_examples or [])
-                        ui.label(_display_name("dimensions_or_examples")).classes("text-xs text-gray-700")
                         for d_idx, dim in enumerate(dims):
-                            with ui.row().classes("w-full items-center gap-2"):
-                                _render_locked_field(
+                            _render_field_pair(
+                                lambda: _render_locked_field(
                                     label=f"{_display_name('dimensions_or_examples')} {d_idx + 1}",
                                     value=dim,
                                     entry=entry,
@@ -1135,18 +1217,17 @@ def render_analysis_page(analysis_id: str) -> None:
                                         di,
                                         text,
                                     ),
-                                )
-                                ui.button("Remove", on_click=lambda _e, i=idx, di=d_idx: remove_dimension(i, di)).props("flat")
-                        ui.button("New dimension or example", on_click=lambda _e, i=idx: add_dimension(i)).props("outline")
+                                ),
+                                lambda: ui.button(
+                                    "Remove dimension",
+                                    on_click=lambda _e, i=idx, di=d_idx: remove_dimension(i, di),
+                                ).props("flat dense color=negative"),
+                            )
 
                         _render_comment_field(
                             label=_display_name("dimensions_or_examples_comment"),
                             value=row.dimensions_or_examples_comment,
-                            on_save=lambda v, i=idx: save_comparator_field(
-                                i,
-                                "dimensions_or_examples_comment",
-                                v,
-                            ),
+                            on_save=lambda v, i=idx: save_comparator_field(i, "dimensions_or_examples_comment", v),
                             entry=entry,
                             span_key=f"comparison.comparators[{idx}].dimensions_or_examples_comment",
                             mutator=lambda cmp, _dif, _nua, text, i=idx: _append_to_comparator_field(
@@ -1156,10 +1237,6 @@ def render_analysis_page(analysis_id: str) -> None:
                                 text,
                             ),
                         )
-
-                        ui.button("Remove comparator", on_click=lambda _e, i=idx: remove_comparator(i)).props("flat")
-
-                ui.button("New comparator", on_click=add_comparator).props("outline")
 
         def _render_objects() -> None:
             objects_container.clear()
@@ -1175,6 +1252,12 @@ def render_analysis_page(analysis_id: str) -> None:
                         _render_nuance_card(entry)
                     else:
                         _render_comparison_card(entry)
+
+        def _on_compact_toggle(event) -> None:
+            state["compact_mode"] = bool(getattr(event, "value", None) if hasattr(event, "value") else event.args)
+            _render_objects()
+
+        compact_toggle.on("update:model-value", _on_compact_toggle)
 
         async def _poll_pending_selection() -> None:
             transcript = state["transcript"]
