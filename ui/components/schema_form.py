@@ -27,12 +27,10 @@ def render_schema_form(
 
             comparand = ui.input("Comparand").classes("w-full")
             comparand_comment = ui.input("Comparand comment").classes("w-full")
-            comparators_comment = ui.input("Comparators comment").classes("w-full")
 
             comparison = entry.comparison
             comparand.set_value(comparison.comparand if comparison else "")
             comparand_comment.set_value(comparison.comparand_comment if comparison else "")
-            comparators_comment.set_value(comparison.comparators_comment if comparison else "")
 
             comparator_rows = ui.column().classes("w-full gap-2")
             comparator_state: list[dict] = []
@@ -166,14 +164,12 @@ def render_schema_form(
                     comparand=(comparand.value or "").strip() or None,
                     comparand_comment=(comparand_comment.value or "").strip() or None,
                     comparators=built_comparators or None,
-                    comparators_comment=(comparators_comment.value or "").strip() or None,
                 )
                 if not any(
                     [
                         comparison_obj.comparand,
                         comparison_obj.comparand_comment,
                         comparison_obj.comparators,
-                        comparison_obj.comparators_comment,
                     ]
                 ):
                     comparison_obj = None

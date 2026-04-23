@@ -21,7 +21,6 @@ class Comparison(BaseModel):
     comparand_comment: Optional[str] = None
 
     comparators: Optional[list[ComparatorDetail]] = None
-    comparators_comment: Optional[str] = None
 
 
 class Perspective(BaseModel):

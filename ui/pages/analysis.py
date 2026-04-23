@@ -1109,19 +1109,6 @@ def render_analysis_page(analysis_id: str) -> None:
                     ),
                 )
 
-                _render_comment_field(
-                    label=_display_name("comparators_comment"),
-                    value=comparison.comparators_comment,
-                    on_save=lambda v: save_top_field("comparators_comment", v),
-                    entry=entry,
-                    span_key="comparison.comparators_comment",
-                    mutator=lambda cmp, _dif, _nua, text: setattr(
-                        cmp,
-                        "comparators_comment",
-                        _append_text(cmp.comparators_comment, text),
-                    ),
-                )
-
                 ui.separator()
                 ui.label(_display_name("comparators")).classes("text-sm font-medium")
                 rows = list(comparison.comparators or [])
