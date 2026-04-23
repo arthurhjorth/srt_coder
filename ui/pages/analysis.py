@@ -910,18 +910,6 @@ def render_analysis_page(analysis_id: str) -> None:
                         ui.button("Remove condition antecedent reason", on_click=lambda _e, i=idx: remove_condition(i)).props("flat")
 
                 ui.button("New condition antecedent reason", on_click=add_condition).props("outline")
-                _render_comment_field(
-                    label=_display_name("condition_antecedent_reason_comment"),
-                    value=nuance.condition_antecedent_reason_comment,
-                    on_save=lambda v: save_field("condition_antecedent_reason_comment", v),
-                    entry=entry,
-                    span_key="nuance.condition_antecedent_reason_comment",
-                    mutator=lambda _cmp, _dif, nua, text: setattr(
-                        nua,
-                        "condition_antecedent_reason_comment",
-                        _append_text(nua.condition_antecedent_reason_comment, text),
-                    ),
-                )
 
         def _ensure_comparator(cmp: Comparison, index: int) -> ComparatorDetail:
             rows = list(cmp.comparators or [])

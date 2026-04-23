@@ -96,7 +96,6 @@ class Nuance(BaseModel):
     condition_antecedent_reason_extract_comment: Optional[str] = None
 
     condition_antecedent_reason: Optional[list[ConditionAntecedentReason]] = None
-    condition_antecedent_reason_comment: Optional[str] = None
 
     sufficiency_does_person_state_that_these_are_sufficient_conditions_extract: Optional[str] = None
     sufficiency_does_person_state_that_these_are_sufficient_conditions_extract_comment: Optional[str] = None
