@@ -102,6 +102,7 @@ def render_analysis_page(analysis_id: str) -> None:
             "pending_span_sig": None,
             "selection_revision_seen": -1,
             "compact_mode": True,
+            "open_by_id": {},
         }
 
         with ui.row().classes("w-full items-center justify-between gap-2 flex-wrap"):
@@ -147,6 +148,18 @@ def render_analysis_page(analysis_id: str) -> None:
             if not replaced:
                 updated_entries.append(updated)
             state["entries"] = updated_entries
+
+        def _is_entry_open(entry: CodingEntry) -> bool:
+            coding_id = entry.coding_id or ""
+            if coding_id in state["open_by_id"]:
+                return bool(state["open_by_id"][coding_id])
+            return True
+
+        def _set_entry_open(entry: CodingEntry, is_open: bool) -> None:
+            coding_id = entry.coding_id or ""
+            if not coding_id:
+                return
+            state["open_by_id"][coding_id] = bool(is_open)
 
         def _count_spans_for_key(entry: CodingEntry, span_key: str) -> int:
             spans = (entry.field_spans or {}).get(span_key) or []
@@ -221,6 +234,8 @@ def render_analysis_page(analysis_id: str) -> None:
             state["entries"] = [
                 e for e in state["entries"] if e.coding_id != entry.coding_id
             ]
+            if entry.coding_id:
+                state["open_by_id"].pop(entry.coding_id, None)
             _refresh_entries()
             _refresh_transcript()
             _render_objects()
@@ -380,6 +395,8 @@ def render_analysis_page(analysis_id: str) -> None:
                 status_label.set_text(str(exc))
                 return
             _replace_entry(created)
+            if created.coding_id:
+                state["open_by_id"][created.coding_id] = True
             _refresh_entries()
             _refresh_transcript()
             _render_objects()
@@ -719,7 +736,11 @@ def render_analysis_page(analysis_id: str) -> None:
                     field_spans=entry.field_spans or {},
                 )
 
-            with ui.expansion(header_label, value=True).props("dense switch-toggle-side").classes(
+            with ui.expansion(
+                header_label,
+                value=_is_entry_open(entry),
+                on_value_change=lambda e: _set_entry_open(entry, e.value),
+            ).props("dense switch-toggle-side").classes(
                 "w-full border rounded bg-white px-2 py-1"
             ):
                 with ui.row().classes("w-full items-center justify-between"):
@@ -901,7 +922,11 @@ def render_analysis_page(analysis_id: str) -> None:
                     field_spans=entry.field_spans or {},
                 )
 
-            with ui.expansion(header_label, value=True).props("dense switch-toggle-side").classes(
+            with ui.expansion(
+                header_label,
+                value=_is_entry_open(entry),
+                on_value_change=lambda e: _set_entry_open(entry, e.value),
+            ).props("dense switch-toggle-side").classes(
                 "w-full border rounded bg-white px-2 py-1"
             ):
                 with ui.row().classes("w-full items-center justify-between"):
@@ -1115,7 +1140,11 @@ def render_analysis_page(analysis_id: str) -> None:
                     field_spans=entry.field_spans or {},
                 )
 
-            with ui.expansion(header_label, value=True).props("dense switch-toggle-side").classes(
+            with ui.expansion(
+                header_label,
+                value=_is_entry_open(entry),
+                on_value_change=lambda e: _set_entry_open(entry, e.value),
+            ).props("dense switch-toggle-side").classes(
                 "w-full border rounded bg-white px-2 py-1"
             ):
                 with ui.row().classes("w-full items-center justify-between"):
