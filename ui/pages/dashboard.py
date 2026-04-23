@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from nicegui import ui
 
 from auth.service import current_username, require_auth_or_redirect
 from auth.views import top_nav
+from config import INTERVIEW_DATA_DIR
 from domain.analysis_service import create_analysis, list_analyses_for_interview
 from domain.analysis_exchange_service import (
     export_analysis_to_file,
@@ -23,17 +26,17 @@ def render_dashboard() -> None:
             "text-sm text-gray-700"
         )
         import_status = ui.label("").classes("text-sm text-gray-700")
-
-        files = list_interview_files()
-        if not files:
-            ui.label("No interview files found in interview_data/.").classes("text-gray-600")
-            return
+        srt_upload_status = ui.label("").classes("text-sm text-gray-700")
 
         list_container = ui.column().classes("w-full gap-3")
 
         def redraw_file_list() -> None:
             list_container.clear()
+            files = list_interview_files()
             with list_container:
+                if not files:
+                    ui.label("No interview files found in interview_data/.").classes("text-gray-600")
+                    return
                 for filename in files:
                     analyses = list_analyses_for_interview(filename)
                     with ui.card().classes("w-full shadow-sm"):
@@ -108,6 +111,46 @@ def render_dashboard() -> None:
             import_status.set_text(f"Exported analysis to {path.name}")
             ui.download(str(path))
 
+        with ui.card().classes("w-full shadow-sm gap-2"):
+            ui.label("Upload Interview SRT Files").classes("font-medium")
+            ui.label(
+                "Drop .srt files here to add them to interview_data/. "
+                "Files with an existing name are rejected."
+            ).classes("text-xs text-gray-600")
+
+            async def on_srt_upload(event) -> None:
+                raw_name = getattr(event.file, "name", "") or ""
+                filename = Path(raw_name).name
+                if not filename:
+                    srt_upload_status.set_text("Upload failed: missing filename.")
+                    return
+                if not filename.lower().endswith(".srt"):
+                    srt_upload_status.set_text(f"Rejected '{filename}': only .srt files are allowed.")
+                    return
+
+                existing_names = {name.lower() for name in list_interview_files()}
+                if filename.lower() in existing_names:
+                    srt_upload_status.set_text(f"Rejected '{filename}': file already exists.")
+                    return
+
+                try:
+                    content = await event.file.read()
+                    INTERVIEW_DATA_DIR.mkdir(parents=True, exist_ok=True)
+                    target_path = INTERVIEW_DATA_DIR / filename
+                    target_path.write_bytes(content)
+                except Exception as exc:
+                    srt_upload_status.set_text(f"Upload failed for '{filename}': {exc}")
+                    return
+
+                srt_upload_status.set_text(f"Uploaded '{filename}' to interview_data/.")
+                redraw_file_list()
+
+            ui.upload(
+                label="Drop SRT files or click to upload",
+                on_upload=on_srt_upload,
+                auto_upload=True,
+            ).props('accept=".srt"')
+
         redraw_file_list()
 
         with ui.card().classes("w-full shadow-sm gap-2"):
@@ -117,10 +160,9 @@ def render_dashboard() -> None:
                 "Analyses with missing transcript files are skipped."
             ).classes("text-xs text-gray-600")
 
-            def on_upload(event) -> None:
+            async def on_upload(event) -> None:
                 try:
-                    content = event.content.read()
-                    text = content.decode("utf-8")
+                    text = await event.file.text()
                     report = import_analyses_from_json_text(text)
                 except Exception as exc:
                     import_status.set_text(f"Import failed: {exc}")

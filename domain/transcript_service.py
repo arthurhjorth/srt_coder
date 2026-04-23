@@ -16,7 +16,11 @@ class TranscriptDocument:
 def list_interview_files() -> list[str]:
     if not INTERVIEW_DATA_DIR.exists():
         return []
-    files = [p.name for p in INTERVIEW_DATA_DIR.glob("*.srt") if p.is_file()]
+    files = [
+        p.name
+        for p in INTERVIEW_DATA_DIR.iterdir()
+        if p.is_file() and p.suffix.lower() == ".srt"
+    ]
     return sorted(files, key=str.lower)
 
 
