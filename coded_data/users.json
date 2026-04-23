@@ -1,0 +1,88 @@
+{
+  "users": [
+    {
+      "username": "admin",
+      "username_comment": null,
+      "password_hash": "pbkdf2_sha256$200000$dfcc10a2aaf8b5056e48219707695c6f$070a05044fc1f367546eec80ce77fb1040452d16c32100cd806736de8daabffb",
+      "password_hash_comment": null,
+      "role": "admin",
+      "role_comment": null,
+      "is_active": true,
+      "is_active_comment": null,
+      "created_at": null,
+      "created_at_comment": null,
+      "updated_at": null,
+      "updated_at_comment": null
+    },
+    {
+      "username": "sofie",
+      "username_comment": null,
+      "password_hash": "pbkdf2_sha256$200000$ebe05b2cc70221d1b040834ed255b70d$0297d49520dd167b526ff5c4f5aa49c08ea6028b3cb09d89e57bba881762de98",
+      "password_hash_comment": null,
+      "role": "coder",
+      "role_comment": null,
+      "is_active": true,
+      "is_active_comment": null,
+      "created_at": null,
+      "created_at_comment": null,
+      "updated_at": null,
+      "updated_at_comment": null
+    },
+    {
+      "username": "margrete",
+      "username_comment": null,
+      "password_hash": "pbkdf2_sha256$200000$dd7672327f9723c2996ed180b8b864a0$335326d6f086685dc988a68e1d0087da7f6fa7abe8e7ee46cbd3959044e4c4d1",
+      "password_hash_comment": null,
+      "role": "coder",
+      "role_comment": null,
+      "is_active": true,
+      "is_active_comment": null,
+      "created_at": null,
+      "created_at_comment": null,
+      "updated_at": null,
+      "updated_at_comment": null
+    },
+    {
+      "username": "maj",
+      "username_comment": null,
+      "password_hash": "pbkdf2_sha256$200000$8ac799f0508fe84b819a1a3373fbfd01$953b77105d816d8acf22b203d3733f582518f11fcab3743c94286a61b0dc9622",
+      "password_hash_comment": null,
+      "role": "coder",
+      "role_comment": null,
+      "is_active": true,
+      "is_active_comment": null,
+      "created_at": null,
+      "created_at_comment": null,
+      "updated_at": null,
+      "updated_at_comment": null
+    },
+    {
+      "username": "anders",
+      "username_comment": null,
+      "password_hash": "pbkdf2_sha256$200000$d805de83b9e213379a644fd38d2b3929$fd9648eced319bd5a6dd1dd3edbafd84ffe0b4dd2758f75fe832550129d3240c",
+      "password_hash_comment": null,
+      "role": "coder",
+      "role_comment": null,
+      "is_active": true,
+      "is_active_comment": null,
+      "created_at": null,
+      "created_at_comment": null,
+      "updated_at": null,
+      "updated_at_comment": null
+    },
+    {
+      "username": "heidi",
+      "username_comment": null,
+      "password_hash": "pbkdf2_sha256$200000$3e12710f243bb13dbd561706407f39cd$ef2bd32e80e1c249af840d3bd5f2e141b82f62c204ddc144e972b0b1f9cec096",
+      "password_hash_comment": null,
+      "role": "coder",
+      "role_comment": null,
+      "is_active": true,
+      "is_active_comment": null,
+      "created_at": null,
+      "created_at_comment": null,
+      "updated_at": null,
+      "updated_at_comment": null
+    }
+  ]
+}
