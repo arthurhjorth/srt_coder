@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+.pytest_cache/
+interview_data/
+.nicegui/
+*.pyc
+.DS_Store
