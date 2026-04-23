@@ -47,14 +47,10 @@ class Differentiation(BaseModel):
     why_is_it_important_extract: Optional[str] = None
     why_is_it_important_extract_comment: Optional[str] = None
 
-    why_is_this_a_thing_extract: Optional[str] = None
-    why_is_this_a_thing_extract_comment: Optional[str] = None
-
-    different_perspectives_or_dimensions_extract: Optional[str] = None
-    different_perspectives_or_dimensions_extract_comment: Optional[str] = None
+    why_is_this_a_thing_or_how_did_it_happen_extract: Optional[str] = None
+    why_is_this_a_thing_or_how_did_it_happen_extract_comment: Optional[str] = None
 
     perspectives_extract: Optional[list[Perspective]] = None
-    perspectives_extract_comment: Optional[str] = None
 
     why_is_it_important_to_take_different_perspectives_extract: Optional[str] = None
     why_is_it_important_to_take_different_perspectives_extract_comment: Optional[str] = None

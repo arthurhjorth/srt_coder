@@ -34,8 +34,7 @@ FIELD_LABELS = {
     "thing_being_considered_extract": "Thing being considered",
     "context_why_is_this_thing_being_considered_or_talked_about_extract": "Context: why considered or discussed",
     "why_is_it_important_extract": "Why is it important?",
-    "why_is_this_a_thing_extract": "Why is this a thing?",
-    "different_perspectives_or_dimensions_extract": "Different perspectives or dimensions",
+    "why_is_this_a_thing_or_how_did_it_happen_extract": "Why is this a thing or how did it happen?",
     "why_is_it_important_to_take_different_perspectives_extract": "Why important to take different perspectives?",
     "what_is_wrong_with_taking_a_unitary_perspective_extract": "What is wrong with a unitary perspective?",
     "perspectives_extract": "Perspectives",
@@ -689,8 +688,7 @@ def render_analysis_page(analysis_id: str) -> None:
                     "thing_being_considered_extract",
                     "context_why_is_this_thing_being_considered_or_talked_about_extract",
                     "why_is_it_important_extract",
-                    "why_is_this_a_thing_extract",
-                    "different_perspectives_or_dimensions_extract",
+                    "why_is_this_a_thing_or_how_did_it_happen_extract",
                     "why_is_it_important_to_take_different_perspectives_extract",
                     "what_is_wrong_with_taking_a_unitary_perspective_extract",
                 ]:
@@ -740,19 +738,6 @@ def render_analysis_page(analysis_id: str) -> None:
                         ui.button("Remove perspective", on_click=lambda _e, i=idx: remove_perspective(i)).props("flat")
 
                 ui.button("New perspective", on_click=add_perspective).props("outline")
-                _render_comment_field(
-                    label=_display_name("perspectives_extract_comment"),
-                    value=differentiation.perspectives_extract_comment,
-                    on_save=lambda v: save_field("perspectives_extract_comment", v),
-                    entry=entry,
-                    span_key="differentiation.perspectives_extract_comment",
-                    mutator=lambda _cmp, dif, _nua, text: setattr(
-                        dif,
-                        "perspectives_extract_comment",
-                        _append_text(dif.perspectives_extract_comment, text),
-                    ),
-                )
-
         def _render_nuance_card(entry: CodingEntry) -> None:
             nuance = entry.nuance.model_copy(deep=True) if entry.nuance else Nuance()
 
