@@ -3,5 +3,7 @@ __pycache__/
 .pytest_cache/
 interview_data/
 .nicegui/
+coded_data/analyses.json
+coded_data/codings.json
 *.pyc
 .DS_Store
