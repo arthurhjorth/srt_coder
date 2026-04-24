@@ -110,6 +110,8 @@ def render_analysis_page(analysis_id: str) -> None:
             with ui.row().classes("items-center gap-2"):
                 count_label = ui.label("Objects in this analysis: 0").classes("text-sm text-gray-700")
                 compact_toggle = ui.switch("Compact mode", value=True).props("dense")
+                collapse_all_btn = ui.button("Collapse all").props("outline dense")
+                uncollapse_all_btn = ui.button("Uncollapse all").props("outline dense")
 
         with ui.row().classes("w-full items-start no-wrap gap-2"):
             left_col = ui.column().classes("w-1/3 gap-1")
@@ -160,6 +162,13 @@ def render_analysis_page(analysis_id: str) -> None:
             if not coding_id:
                 return
             state["open_by_id"][coding_id] = bool(is_open)
+
+        def _set_all_entries_open(is_open: bool) -> None:
+            for entry in state["entries"]:
+                coding_id = entry.coding_id or ""
+                if coding_id:
+                    state["open_by_id"][coding_id] = bool(is_open)
+            _render_objects()
 
         def _count_spans_for_key(entry: CodingEntry, span_key: str) -> int:
             spans = (entry.field_spans or {}).get(span_key) or []
@@ -736,18 +745,19 @@ def render_analysis_page(analysis_id: str) -> None:
                     field_spans=entry.field_spans or {},
                 )
 
-            with ui.expansion(
+            exp = ui.expansion(
                 header_label,
                 value=_is_entry_open(entry),
                 on_value_change=lambda e: _set_entry_open(entry, e.value),
             ).props("dense switch-toggle-side").classes(
                 "w-full border rounded bg-white px-2 py-1"
-            ):
-                with ui.row().classes("w-full items-center justify-between"):
-                    ui.button(
-                        "Delete object",
-                        on_click=lambda: _request_delete_entry(entry, "differentiation"),
-                    ).props("outline dense color=negative")
+            )
+            with exp.add_slot("header"):
+                with ui.row().classes("w-full items-center justify-between pr-2"):
+                    ui.label(header_label).classes("text-sm font-medium")
+                    btn = ui.button("Delete object").props("flat dense color=negative")
+                    btn.on("click.stop", lambda _e: _request_delete_entry(entry, "differentiation"))
+            with exp:
                 if not _is_compact():
                     ui.label(f"ID: {entry.coding_id}").classes("text-xs text-gray-500")
 
@@ -922,18 +932,19 @@ def render_analysis_page(analysis_id: str) -> None:
                     field_spans=entry.field_spans or {},
                 )
 
-            with ui.expansion(
+            exp = ui.expansion(
                 header_label,
                 value=_is_entry_open(entry),
                 on_value_change=lambda e: _set_entry_open(entry, e.value),
             ).props("dense switch-toggle-side").classes(
                 "w-full border rounded bg-white px-2 py-1"
-            ):
-                with ui.row().classes("w-full items-center justify-between"):
-                    ui.button(
-                        "Delete object",
-                        on_click=lambda: _request_delete_entry(entry, "nuance"),
-                    ).props("outline dense color=negative")
+            )
+            with exp.add_slot("header"):
+                with ui.row().classes("w-full items-center justify-between pr-2"):
+                    ui.label(header_label).classes("text-sm font-medium")
+                    btn = ui.button("Delete object").props("flat dense color=negative")
+                    btn.on("click.stop", lambda _e: _request_delete_entry(entry, "nuance"))
+            with exp:
                 if not _is_compact():
                     ui.label(f"ID: {entry.coding_id}").classes("text-xs text-gray-500")
 
@@ -1140,18 +1151,19 @@ def render_analysis_page(analysis_id: str) -> None:
                     field_spans=entry.field_spans or {},
                 )
 
-            with ui.expansion(
+            exp = ui.expansion(
                 header_label,
                 value=_is_entry_open(entry),
                 on_value_change=lambda e: _set_entry_open(entry, e.value),
             ).props("dense switch-toggle-side").classes(
                 "w-full border rounded bg-white px-2 py-1"
-            ):
-                with ui.row().classes("w-full items-center justify-between"):
-                    ui.button(
-                        "Delete object",
-                        on_click=lambda: _request_delete_entry(entry, "comparison"),
-                    ).props("outline dense color=negative")
+            )
+            with exp.add_slot("header"):
+                with ui.row().classes("w-full items-center justify-between pr-2"):
+                    ui.label(header_label).classes("text-sm font-medium")
+                    btn = ui.button("Delete object").props("flat dense color=negative")
+                    btn.on("click.stop", lambda _e: _request_delete_entry(entry, "comparison"))
+            with exp:
                 if not _is_compact():
                     ui.label(f"ID: {entry.coding_id}").classes("text-xs text-gray-500")
 
@@ -1287,6 +1299,8 @@ def render_analysis_page(analysis_id: str) -> None:
             _render_objects()
 
         compact_toggle.on("update:model-value", _on_compact_toggle)
+        collapse_all_btn.on("click", lambda _e: _set_all_entries_open(False))
+        uncollapse_all_btn.on("click", lambda _e: _set_all_entries_open(True))
 
         async def _poll_pending_selection() -> None:
             transcript = state["transcript"]
