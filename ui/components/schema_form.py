@@ -26,7 +26,7 @@ def render_schema_form(
             note_input.set_value(entry.note or "")
 
             comparand = ui.input("Comparand").classes("w-full")
-            comparand_comment = ui.input("Comparand comment").classes("w-full")
+            comparand_comment = ui.textarea("Comparand comment").props("rows=3").classes("w-full")
 
             comparison = entry.comparison
             comparand.set_value(comparison.comparand if comparison else "")
@@ -69,7 +69,7 @@ def render_schema_form(
                                 ),
                             )
 
-                            inp_comp_c = ui.input("Comparator comment").classes("w-full")
+                            inp_comp_c = ui.textarea("Comparator comment").props("rows=3").classes("w-full")
                             inp_comp_c.set_value(row_state["comparator_comment"])
                             inp_comp_c.on(
                                 "update:model-value",
@@ -87,7 +87,7 @@ def render_schema_form(
                                 ),
                             )
 
-                            inp_adj_c = ui.input("Adjective comment").classes("w-full")
+                            inp_adj_c = ui.textarea("Adjective comment").props("rows=3").classes("w-full")
                             inp_adj_c.set_value(row_state["adjective_comment"])
                             inp_adj_c.on(
                                 "update:model-value",
@@ -105,7 +105,7 @@ def render_schema_form(
                                 ),
                             )
 
-                            inp_dims_c = ui.input("Dimensions/Examples comment").classes("w-full")
+                            inp_dims_c = ui.textarea("Dimensions/Examples comment").props("rows=3").classes("w-full")
                             inp_dims_c.set_value(row_state["dimensions_or_examples_comment"])
                             inp_dims_c.on(
                                 "update:model-value",

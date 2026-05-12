@@ -675,7 +675,7 @@ def render_analysis_page(analysis_id: str) -> None:
         ) -> None:
             with ui.row().classes("w-full items-center justify-between"):
                 ui.label(label).classes("text-[11px] text-gray-700" if _is_compact() else "text-xs text-gray-700")
-            cmt = ui.input().classes("w-full")
+            cmt = ui.textarea().props("rows=3").classes("w-full")
             if _is_compact():
                 cmt.props("dense")
             cmt.set_value(value or "")
