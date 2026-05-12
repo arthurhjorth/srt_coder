@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+import re
 import time
 
 from nicegui import ui
@@ -480,6 +481,106 @@ def render_analysis_page(analysis_id: str) -> None:
                 await _jump_to_specific_span(span)
             element.on("click", _on_click)
 
+        def _is_comment_span_key(span_key: str) -> bool:
+            return span_key.split(".")[-1].endswith("_comment")
+
+        def _parse_span_key_part(part: str) -> tuple[str, list[int]]:
+            name_match = re.match(r"^([^\[]+)", part)
+            name = name_match.group(1) if name_match else part
+            indexes = [int(i) for i in re.findall(r"\[(\d+)\]", part)]
+            return name, indexes
+
+        def _set_text_for_span_key(
+            *,
+            comparison: Comparison | None,
+            differentiation: Differentiation | None,
+            nuance: Nuance | None,
+            span_key: str,
+            value: str | None,
+        ) -> None:
+            parts = span_key.split(".")
+            if not parts:
+                return
+
+            root_name = parts[0]
+            root = {
+                "comparison": comparison,
+                "differentiation": differentiation,
+                "nuance": nuance,
+            }.get(root_name)
+            if root is None:
+                return
+
+            target = root
+            for part in parts[1:-1]:
+                attr_name, indexes = _parse_span_key_part(part)
+                target = getattr(target, attr_name, None)
+                for idx in indexes:
+                    if target is None or idx >= len(target):
+                        return
+                    target = target[idx]
+                if target is None:
+                    return
+
+            attr_name, indexes = _parse_span_key_part(parts[-1])
+            if not indexes:
+                setattr(target, attr_name, value)
+                return
+
+            values = getattr(target, attr_name, None)
+            if values is None:
+                return
+            idx = indexes[0]
+            if idx >= len(values):
+                return
+            values[idx] = value or ""
+            setattr(target, attr_name, values)
+
+        def _delete_span_from_field(entry: CodingEntry, span_key: str, span_index: int) -> None:
+            existing_spans = list((entry.field_spans or {}).get(span_key) or [])
+            if span_index < 0 or span_index >= len(existing_spans):
+                return
+
+            remaining_spans = [
+                span
+                for idx, span in enumerate(existing_spans)
+                if idx != span_index
+            ]
+            field_spans = {k: list(v) for k, v in (entry.field_spans or {}).items()}
+            if remaining_spans:
+                field_spans[span_key] = remaining_spans
+            else:
+                field_spans.pop(span_key, None)
+
+            comparison = entry.comparison.model_copy(deep=True) if entry.comparison else None
+            differentiation = (
+                entry.differentiation.model_copy(deep=True) if entry.differentiation else None
+            )
+            nuance = entry.nuance.model_copy(deep=True) if entry.nuance else None
+
+            if not _is_comment_span_key(span_key):
+                rebuilt_text = "\n".join(
+                    (span.get("selected_text") or "").strip()
+                    for span in remaining_spans
+                    if (span.get("selected_text") or "").strip()
+                ) or None
+                _set_text_for_span_key(
+                    comparison=comparison,
+                    differentiation=differentiation,
+                    nuance=nuance,
+                    span_key=span_key,
+                    value=rebuilt_text,
+                )
+
+            _persist_models(
+                entry,
+                comparison=comparison,
+                differentiation=differentiation,
+                nuance=nuance,
+                field_spans=field_spans,
+            )
+            status_label.set_text("Deleted span.")
+
         def _render_field_spans(entry: CodingEntry, span_key: str, *, inside_box: bool = False) -> int:
             spans = (entry.field_spans or {}).get(span_key) or []
             if not spans:
@@ -498,7 +599,13 @@ def render_analysis_page(analysis_id: str) -> None:
                     )
                 )
                 with box:
-                    ui.label(f"{idx}. {snippet}").classes("whitespace-pre-wrap")
+                    with ui.row().classes("w-full items-start justify-between gap-2 no-wrap"):
+                        ui.label(f"{idx}. {snippet}").classes("whitespace-pre-wrap")
+                        delete_btn = ui.button("Delete").props("flat dense color=negative")
+                        delete_btn.on(
+                            "click.stop",
+                            lambda _e, i=idx - 1: _delete_span_from_field(entry, span_key, i),
+                        )
                 _bind_span_jump(box, span)
             return len(spans)
 

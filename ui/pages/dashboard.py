@@ -117,20 +117,42 @@ def render_dashboard() -> None:
                 "Drop .srt files here to add them to interview_data/. "
                 "Files with an existing name are rejected."
             ).classes("text-xs text-gray-600")
+            srt_batch = {
+                "total": 0,
+                "uploaded": 0,
+                "rejected": 0,
+                "failed": 0,
+                "messages": [],
+            }
+
+            def reset_srt_batch() -> None:
+                srt_batch["total"] = 0
+                srt_batch["uploaded"] = 0
+                srt_batch["rejected"] = 0
+                srt_batch["failed"] = 0
+                srt_batch["messages"] = []
+
+            def on_srt_begin_upload(_event) -> None:
+                reset_srt_batch()
+                srt_upload_status.set_text("Uploading SRT files...")
 
             async def on_srt_upload(event) -> None:
                 raw_name = getattr(event.file, "name", "") or ""
                 filename = Path(raw_name).name
+                srt_batch["total"] += 1
                 if not filename:
-                    srt_upload_status.set_text("Upload failed: missing filename.")
+                    srt_batch["failed"] += 1
+                    srt_batch["messages"].append("Upload failed: missing filename.")
                     return
                 if not filename.lower().endswith(".srt"):
-                    srt_upload_status.set_text(f"Rejected '{filename}': only .srt files are allowed.")
+                    srt_batch["rejected"] += 1
+                    srt_batch["messages"].append(f"Rejected '{filename}': only .srt files are allowed.")
                     return
 
                 existing_names = {name.lower() for name in list_interview_files()}
                 if filename.lower() in existing_names:
-                    srt_upload_status.set_text(f"Rejected '{filename}': file already exists.")
+                    srt_batch["rejected"] += 1
+                    srt_batch["messages"].append(f"Rejected '{filename}': file already exists.")
                     return
 
                 try:
@@ -139,15 +161,33 @@ def render_dashboard() -> None:
                     target_path = INTERVIEW_DATA_DIR / filename
                     target_path.write_bytes(content)
                 except Exception as exc:
-                    srt_upload_status.set_text(f"Upload failed for '{filename}': {exc}")
+                    srt_batch["failed"] += 1
+                    srt_batch["messages"].append(f"Upload failed for '{filename}': {exc}")
                     return
 
-                srt_upload_status.set_text(f"Uploaded '{filename}' to interview_data/.")
+                srt_batch["uploaded"] += 1
+                srt_batch["messages"].append(f"Uploaded '{filename}'.")
+
+            def on_srt_multi_upload(event) -> None:
+                total = len(getattr(event, "files", []) or [])
+                if total:
+                    srt_batch["total"] = total
                 redraw_file_list()
+                summary = (
+                    "SRT upload finished: uploaded={uploaded}, rejected={rejected}, failed={failed}, total={total}."
+                    .format(**srt_batch)
+                )
+                details = " ".join(srt_batch["messages"][:6])
+                if len(srt_batch["messages"]) > 6:
+                    details += f" (+{len(srt_batch['messages']) - 6} more)"
+                srt_upload_status.set_text(f"{summary} {details}".strip())
 
             ui.upload(
                 label="Drop SRT files or click to upload",
+                multiple=True,
+                on_begin_upload=on_srt_begin_upload,
                 on_upload=on_srt_upload,
+                on_multi_upload=on_srt_multi_upload,
                 auto_upload=True,
             ).props('accept=".srt"')
 
