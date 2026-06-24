@@ -60,7 +60,30 @@ class NormalizedAnnotation:
     object_type: str
     field_path: str
     normalized_field_path: str
+    root_object_key: str
+    embedded_parent_path: str | None
+    normalized_embedded_parent_path: str | None
     span: TranscriptSpan
+
+
+@dataclass(frozen=True)
+class AnnotationMatch:
+    left: NormalizedAnnotation
+    right: NormalizedAnnotation
+    quality: float
+
+
+@dataclass(frozen=True)
+class GraphDiagnostics:
+    root_splits: int
+    root_merges: int
+    embedded_splits: int
+    embedded_merges: int
+    warnings: list[str]
+
+    @property
+    def total_issues(self) -> int:
+        return self.root_splits + self.root_merges + self.embedded_splits + self.embedded_merges
 
 
 @dataclass(frozen=True)
@@ -92,6 +115,8 @@ class PairAgreement:
     precision: float
     recall: float
     f1: float
+    graph_diagnostics: GraphDiagnostics
+    annotation_matches: list[AnnotationMatch]
 
 
 @dataclass(frozen=True)
@@ -164,6 +189,13 @@ def load_agreement_export(raw_text: str, *, source_name: str, source_index: int)
                         object_type=coding.object_type or "",
                         field_path=str(field_path),
                         normalized_field_path=normalize_field_path(str(field_path)),
+                        root_object_key=_root_object_key(coding, len(annotations)),
+                        embedded_parent_path=extract_embedded_parent_path(str(field_path)),
+                        normalized_embedded_parent_path=(
+                            normalize_field_path(parent_path)
+                            if (parent_path := extract_embedded_parent_path(str(field_path))) is not None
+                            else None
+                        ),
                         span=span,
                     )
                 )
@@ -202,6 +234,13 @@ def build_agreement_report(
 
 def normalize_field_path(field_path: str) -> str:
     return re.sub(r"\[\d+\]", "[]", field_path)
+
+
+def extract_embedded_parent_path(field_path: str) -> str | None:
+    match = re.search(r"^(.*\[\d+\])\.[^.]+$", field_path)
+    if not match:
+        return None
+    return match.group(1)
 
 
 def annotations_match(
@@ -313,6 +352,11 @@ def _pair_agreements(
             sources_by_index[right].annotations,
             rules,
         )
+        graph_diagnostics = _graph_diagnostics(
+            f1_counts["matches"],
+            left_label=by_index.get(left, str(left)),
+            right_label=by_index.get(right, str(right)),
+        )
         reports.append(
             PairAgreement(
                 left_label=by_index.get(left, str(left)),
@@ -326,6 +370,8 @@ def _pair_agreements(
                 precision=f1_counts["precision"],
                 recall=f1_counts["recall"],
                 f1=f1_counts["f1"],
+                graph_diagnostics=graph_diagnostics,
+                annotation_matches=f1_counts["matches"],
             )
         )
     return reports
@@ -335,24 +381,9 @@ def _pairwise_f1_counts(
     left_annotations: list[NormalizedAnnotation],
     right_annotations: list[NormalizedAnnotation],
     rules: AgreementRules,
-) -> dict[str, float | int]:
-    candidates: list[tuple[float, int, int]] = []
-    for left_index, left in enumerate(left_annotations):
-        for right_index, right in enumerate(right_annotations):
-            if annotations_match(left, right, rules):
-                candidates.append((_match_quality(left, right, rules), left_index, right_index))
-
-    candidates.sort(reverse=True)
-    matched_left: set[int] = set()
-    matched_right: set[int] = set()
-    true_positives = 0
-    for _quality, left_index, right_index in candidates:
-        if left_index in matched_left or right_index in matched_right:
-            continue
-        matched_left.add(left_index)
-        matched_right.add(right_index)
-        true_positives += 1
-
+) -> dict[str, float | int | list[AnnotationMatch]]:
+    matches = _pairwise_annotation_matches(left_annotations, right_annotations, rules)
+    true_positives = len(matches)
     false_positives = len(left_annotations) - true_positives
     false_negatives = len(right_annotations) - true_positives
     precision = true_positives / (true_positives + false_positives) if true_positives + false_positives else 0.0
@@ -365,7 +396,127 @@ def _pairwise_f1_counts(
         "precision": precision,
         "recall": recall,
         "f1": f1,
+        "matches": matches,
     }
+
+
+def _pairwise_annotation_matches(
+    left_annotations: list[NormalizedAnnotation],
+    right_annotations: list[NormalizedAnnotation],
+    rules: AgreementRules,
+) -> list[AnnotationMatch]:
+    candidates: list[tuple[float, int, int]] = []
+    for left_index, left in enumerate(left_annotations):
+        for right_index, right in enumerate(right_annotations):
+            if annotations_match(left, right, rules):
+                candidates.append((_match_quality(left, right, rules), left_index, right_index))
+
+    candidates.sort(reverse=True)
+    matched_left: set[int] = set()
+    matched_right: set[int] = set()
+    matches: list[AnnotationMatch] = []
+    for quality, left_index, right_index in candidates:
+        if left_index in matched_left or right_index in matched_right:
+            continue
+        matched_left.add(left_index)
+        matched_right.add(right_index)
+        matches.append(
+            AnnotationMatch(
+                left=left_annotations[left_index],
+                right=right_annotations[right_index],
+                quality=quality,
+            )
+        )
+    return matches
+
+
+def _graph_diagnostics(
+    matches: list[AnnotationMatch],
+    *,
+    left_label: str,
+    right_label: str,
+) -> GraphDiagnostics:
+    root_left_to_right: dict[str, set[str]] = {}
+    root_right_to_left: dict[str, set[str]] = {}
+    embedded_left_to_right: dict[str, set[str]] = {}
+    embedded_right_to_left: dict[str, set[str]] = {}
+
+    for match in matches:
+        _add_link(root_left_to_right, match.left.root_object_key, match.right.root_object_key)
+        _add_link(root_right_to_left, match.right.root_object_key, match.left.root_object_key)
+
+        left_embedded = _embedded_object_key(match.left)
+        right_embedded = _embedded_object_key(match.right)
+        if left_embedded and right_embedded:
+            _add_link(embedded_left_to_right, left_embedded, right_embedded)
+            _add_link(embedded_right_to_left, right_embedded, left_embedded)
+
+    root_splits = sum(1 for targets in root_left_to_right.values() if len(targets) > 1)
+    root_merges = sum(1 for targets in root_right_to_left.values() if len(targets) > 1)
+    embedded_splits = sum(1 for targets in embedded_left_to_right.values() if len(targets) > 1)
+    embedded_merges = sum(1 for targets in embedded_right_to_left.values() if len(targets) > 1)
+
+    warnings: list[str] = []
+    warnings.extend(
+        _connection_warnings(
+            root_left_to_right,
+            f"{left_label} root object",
+            f"{right_label} root objects",
+            "split",
+        )
+    )
+    warnings.extend(
+        _connection_warnings(
+            root_right_to_left,
+            f"{right_label} root object",
+            f"{left_label} root objects",
+            "merge",
+        )
+    )
+    warnings.extend(
+        _connection_warnings(
+            embedded_left_to_right,
+            f"{left_label} embedded object",
+            f"{right_label} embedded objects",
+            "embedded split",
+        )
+    )
+    warnings.extend(
+        _connection_warnings(
+            embedded_right_to_left,
+            f"{right_label} embedded object",
+            f"{left_label} embedded objects",
+            "embedded merge",
+        )
+    )
+
+    return GraphDiagnostics(
+        root_splits=root_splits,
+        root_merges=root_merges,
+        embedded_splits=embedded_splits,
+        embedded_merges=embedded_merges,
+        warnings=warnings,
+    )
+
+
+def _add_link(links: dict[str, set[str]], left: str, right: str) -> None:
+    if not left or not right:
+        return
+    links.setdefault(left, set()).add(right)
+
+
+def _connection_warnings(
+    links: dict[str, set[str]],
+    left_name: str,
+    right_name: str,
+    label: str,
+) -> list[str]:
+    warnings = []
+    for left, targets in sorted(links.items()):
+        if len(targets) <= 1:
+            continue
+        warnings.append(f"{label}: {left_name} {left} maps to {len(targets)} {right_name}.")
+    return warnings
 
 
 def _match_quality(
@@ -415,6 +566,18 @@ def _source_label(source_name: str, analyses: list[Analysis], codings: list[Codi
         if coding.created_by:
             return coding.created_by
     return source_name
+
+
+def _root_object_key(coding: CodingEntry, fallback_index: int) -> str:
+    if coding.coding_id:
+        return coding.coding_id
+    return f"{coding.object_type or 'coding'}:{fallback_index}"
+
+
+def _embedded_object_key(annotation: NormalizedAnnotation) -> str | None:
+    if annotation.embedded_parent_path is None:
+        return None
+    return f"{annotation.root_object_key}:{annotation.embedded_parent_path}"
 
 
 def _parse_span(raw_span: Any) -> TranscriptSpan | None:
