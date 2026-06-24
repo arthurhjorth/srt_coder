@@ -4,7 +4,7 @@ from nicegui import ui
 
 from auth.service import require_auth_or_redirect
 from auth.views import render_login_page
-from config import APP_HOST, APP_PORT, APP_TITLE, STORAGE_SECRET
+from config import APP_HOST, APP_PORT, APP_TITLE, EXPORTS_DIR, STORAGE_SECRET
 from ui.pages.agreement import render_agreement_page
 from ui.pages.analysis import render_analysis_page
 from ui.pages.dashboard import render_dashboard
@@ -33,6 +33,7 @@ def agreement_page() -> None:
 
 
 def main() -> None:
+    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
     ui.run(
         title=APP_TITLE,
         host=APP_HOST,
