@@ -5,6 +5,7 @@ from nicegui import ui
 from auth.service import require_auth_or_redirect
 from auth.views import render_login_page
 from config import APP_HOST, APP_PORT, APP_TITLE, STORAGE_SECRET
+from ui.pages.agreement import render_agreement_page
 from ui.pages.analysis import render_analysis_page
 from ui.pages.dashboard import render_dashboard
 
@@ -24,6 +25,11 @@ def dashboard_page() -> None:
 @ui.page("/analysis/{analysis_id}")
 def analysis_page(analysis_id: str) -> None:
     render_analysis_page(analysis_id)
+
+
+@ui.page("/agreement")
+def agreement_page() -> None:
+    render_agreement_page()
 
 
 def main() -> None:
