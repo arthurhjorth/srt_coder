@@ -9,6 +9,7 @@ It supports:
 - per-field comments
 - multiple analyses per transcript
 - import/export of analyses as JSON bundles
+- read-only visual review of automatic schema migrations
 
 ## Current Behavior (Important)
 
@@ -17,6 +18,8 @@ It supports:
 - Non-comment fields are locked for typing in the UI and are populated by assigning highlighted spans.
 - Comment fields are editable and save on blur.
 - Span chips are clickable and jump to the referenced transcript location.
+- New span selections ignore leading and trailing whitespace while preserving
+  whitespace inside the selected passage.
 
 ## High-Level Workflow
 
@@ -44,6 +47,9 @@ Transcript cards are colored by speaker order in the current transcript:
 - Drag-highlight text in transcript.
 - Click a field add area to append the selected span.
 - Field spans are stored in `CodingEntry.field_spans[field_key]`.
+- Before saving, span anchors are moved to the first and one-past-last
+  non-whitespace characters and selected text is reconstructed from the
+  transcript. Whitespace-only selections are ignored.
 
 ### Span Display and Jump
 
@@ -118,6 +124,24 @@ JSON files under `coded_data/`:
 - `analyses.json`
 - `codings.json`
 - `exports/` (generated export files)
+
+### Automatic Differentiation Schema Migration
+
+On startup, the server checks raw coding data for the legacy Differentiation
+fields. If migration is needed, it first creates a timestamped, checksum-verified
+copy of both `analyses.json` and `codings.json` under
+`coded_data/old_schema_analyses/`. Only after that backup verifies successfully
+does it atomically replace `codings.json` with schema version 2.
+
+If backup or migration validation fails, the server does not start and the live
+files are left untouched or restored from the verified backup. The launcher shows
+a copyable diagnostic that should be sent to Arthur.
+
+After a migration, open **Review schema migration** from the dashboard. The
+read-only page compares the immutable backup, the migration's deterministic
+expected result, and the current live values. It also shows comments and span
+movement, and indicates whether the live store still matches the checksum created
+at migration time.
 
 Interview sources under `interview_data/`.
 
