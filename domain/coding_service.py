@@ -5,6 +5,7 @@ import uuid
 
 from models import CodingEntry, Comparison, Differentiation, Nuance, Perspective
 from parsing.srt_parser import TranscriptSegment
+from parsing.span_normalization import normalize_span_selection
 from storage.coding_repo import list_codings, list_codings_for_analysis, save_codings
 
 _MISSING = object()
@@ -86,6 +87,7 @@ def create_entry_for_span(
     selected_text: str,
     created_by: str,
     note: str | None = None,
+    transcript_segments: list[TranscriptSegment] | None = None,
 ) -> CodingEntry:
     if not analysis_id:
         raise ValueError("analysis_id is required")
@@ -101,6 +103,26 @@ def create_entry_for_span(
         raise ValueError("Offsets cannot be negative")
     if start_segment_id == end_segment_id and start_char_offset > end_char_offset:
         raise ValueError("start offset cannot be greater than end offset")
+
+    normalized = normalize_span_selection(
+        transcript_segments or [segment],
+        {
+            "start_segment_id": start_segment_id,
+            "start_char_offset": start_char_offset,
+            "end_segment_id": end_segment_id,
+            "end_char_offset": end_char_offset,
+            "selected_text": selected_text,
+        },
+    )
+    if normalized is None:
+        if start_segment_id != end_segment_id and transcript_segments is None:
+            raise ValueError("transcript_segments are required to normalize a multi-segment span")
+        raise ValueError("Selected span must contain non-whitespace transcript text")
+    start_segment_id = normalized["start_segment_id"]
+    start_char_offset = normalized["start_char_offset"]
+    end_segment_id = normalized["end_segment_id"]
+    end_char_offset = normalized["end_char_offset"]
+    selected_text = normalized["selected_text"]
 
     now = _utc_now_iso()
     entry = CodingEntry(

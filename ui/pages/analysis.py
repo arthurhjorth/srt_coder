@@ -27,6 +27,7 @@ from models import (
     Perspective,
 )
 from parsing.srt_parser import TranscriptSegment
+from parsing.span_normalization import extract_text_for_span, normalize_span_selection
 from state.session_state import set_selected_analysis_id, set_selected_interview_file
 from ui.components.transcript_view import render_transcript_segments
 
@@ -308,16 +309,7 @@ def render_analysis_page(analysis_id: str) -> None:
             normalized = _normalize_span_selection(transcript.segments, cached)
             if normalized is None:
                 return
-            selected_text = (normalized.get("selected_text") or "").strip()
-            if not selected_text:
-                selected_text = _extract_text_for_span(
-                    transcript.segments,
-                    normalized["start_segment_id"],
-                    normalized["start_char_offset"],
-                    normalized["end_segment_id"],
-                    normalized["end_char_offset"],
-                )
-            selected_text = (selected_text or "").strip()
+            selected_text = normalized.get("selected_text") or ""
             if not selected_text:
                 return
 
@@ -1523,34 +1515,13 @@ def _extract_text_for_span(
     end_segment_id: str,
     end_char_offset: int,
 ) -> str:
-    order = {seg.segment_id: i for i, seg in enumerate(segments)}
-    by_id = {seg.segment_id: seg for seg in segments}
-    if start_segment_id not in order or end_segment_id not in order:
-        return ""
-    a = order[start_segment_id]
-    b = order[end_segment_id]
-    if a > b:
-        a, b = b, a
-        start_segment_id, end_segment_id = end_segment_id, start_segment_id
-        start_char_offset, end_char_offset = end_char_offset, start_char_offset
-    if start_segment_id == end_segment_id:
-        text = by_id[start_segment_id].text
-        s = max(0, min(len(text), start_char_offset))
-        e = max(0, min(len(text), end_char_offset))
-        if e < s:
-            s, e = e, s
-        return text[s:e]
-
-    chunks: list[str] = []
-    first = by_id[start_segment_id].text
-    s = max(0, min(len(first), start_char_offset))
-    chunks.append(first[s:])
-    for seg in segments[a + 1 : b]:
-        chunks.append(seg.text)
-    last = by_id[end_segment_id].text
-    e = max(0, min(len(last), end_char_offset))
-    chunks.append(last[:e])
-    return "\n".join([c for c in chunks if c])
+    return extract_text_for_span(
+        segments,
+        start_segment_id,
+        start_char_offset,
+        end_segment_id,
+        end_char_offset,
+    )
 
 
 def _install_selection_cache_script() -> None:
@@ -1649,33 +1620,7 @@ def _normalize_span_selection(
     segments: list[TranscriptSegment],
     payload: dict,
 ) -> dict | None:
-    index_map = {seg.segment_id: i for i, seg in enumerate(segments)}
-    text_map = {seg.segment_id: seg.text for seg in segments}
-    try:
-        start_id = payload["start_segment_id"]
-        end_id = payload["end_segment_id"]
-        start_off = int(payload["start_char_offset"])
-        end_off = int(payload["end_char_offset"])
-    except Exception:
-        return None
-    if start_id not in index_map or end_id not in index_map:
-        return None
-    if index_map[start_id] > index_map[end_id]:
-        start_id, end_id = end_id, start_id
-        start_off, end_off = end_off, start_off
-    start_text = text_map[start_id]
-    end_text = text_map[end_id]
-    start_off = max(0, min(len(start_text), start_off))
-    end_off = max(0, min(len(end_text), end_off))
-    if start_id == end_id and start_off > end_off:
-        start_off, end_off = end_off, start_off
-    return {
-        "start_segment_id": start_id,
-        "start_char_offset": start_off,
-        "end_segment_id": end_id,
-        "end_char_offset": end_off,
-        "selected_text": payload.get("selected_text") or "",
-    }
+    return normalize_span_selection(segments, payload)
 
 
 def _build_highlight_ranges(
