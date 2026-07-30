@@ -137,3 +137,73 @@ def test_import_recreates_ids_and_matches_existing_by_name() -> None:
     imported_coding = saved["codings"][0]
     assert imported_coding.coding_id != "c-src"
     assert imported_coding.analysis_id == imported[0].analysis_id
+
+
+def test_import_migrates_legacy_differentiation_before_model_validation() -> None:
+    old_field = "why_is_this_a_thing_or_how_did_it_happen_extract"
+    target_field = "why_is_it_important_extract"
+    payload = {
+        "export_version": "1",
+        "analyses": [
+            {
+                "analysis_id": "legacy-analysis",
+                "owner_username": "alice",
+                "interview_file": "file.srt",
+                "name": "Legacy run",
+            }
+        ],
+        "codings": [
+            {
+                "coding_id": "legacy-coding",
+                "analysis_id": "legacy-analysis",
+                "interview_file": "file.srt",
+                "object_type": "differentiation",
+                "created_by": "alice",
+                "differentiation": {
+                    target_field: "target text",
+                    old_field: "legacy text",
+                },
+                "field_spans": {
+                    f"differentiation.{old_field}": [
+                        {
+                            "start_segment_id": "seg-00001",
+                            "start_char_offset": 0,
+                            "end_segment_id": "seg-00001",
+                            "end_char_offset": 4,
+                            "selected_text": "legacy",
+                        }
+                    ]
+                },
+            }
+        ],
+        "users": [{"username": "alice", "is_active": False}],
+    }
+    saved = {"codings": None}
+    originals = {
+        "list_users": analysis_exchange_service.list_users,
+        "list_analyses": analysis_exchange_service.list_analyses,
+        "list_codings": analysis_exchange_service.list_codings,
+        "save_users": analysis_exchange_service.save_users,
+        "save_analyses": analysis_exchange_service.save_analyses,
+        "save_codings": analysis_exchange_service.save_codings,
+        "list_interview_files": analysis_exchange_service.list_interview_files,
+    }
+    analysis_exchange_service.list_users = lambda: []
+    analysis_exchange_service.list_analyses = lambda: []
+    analysis_exchange_service.list_codings = lambda: []
+    analysis_exchange_service.save_users = lambda _items: None
+    analysis_exchange_service.save_analyses = lambda _items: None
+    analysis_exchange_service.save_codings = lambda items: saved.__setitem__("codings", items)
+    analysis_exchange_service.list_interview_files = lambda: ["file.srt"]
+    try:
+        report = analysis_exchange_service.import_analyses_from_payload(payload)
+    finally:
+        for name, value in originals.items():
+            setattr(analysis_exchange_service, name, value)
+
+    assert report["imported_codings"] == 1
+    imported = saved["codings"][0]
+    assert imported.differentiation is not None
+    assert imported.differentiation.why_is_it_important_extract == "target text\nlegacy text"
+    assert f"differentiation.{old_field}" not in imported.field_spans
+    assert f"differentiation.{target_field}" in imported.field_spans

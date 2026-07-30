@@ -7,6 +7,7 @@ from itertools import combinations
 from typing import Any, Literal
 
 from models import Analysis, CodingEntry
+from domain.differentiation_migration import migrate_export_payload
 
 
 SpanMode = Literal["exact", "partial"]
@@ -138,6 +139,8 @@ def load_agreement_export(raw_text: str, *, source_name: str, source_index: int)
 
     if not isinstance(payload, dict):
         raise ValueError("Agreement input must be a JSON object")
+
+    payload = migrate_export_payload(payload)
 
     analyses_raw = payload.get("analyses")
     if analyses_raw is None and payload.get("analysis") is not None:

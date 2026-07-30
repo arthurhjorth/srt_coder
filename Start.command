@@ -10,6 +10,7 @@ PID_FILE="$RUNTIME_DIR/server.pid"
 LOG_FILE="$RUNTIME_DIR/server.log"
 UV_BIN=""
 APP_PID=""
+APP_STARTED="false"
 
 cleanup() {
   if [[ -n "$APP_PID" ]]; then
@@ -81,11 +82,32 @@ echo "$APP_PID" > "$PID_FILE"
 for _ in {1..30}; do
   if command -v curl >/dev/null 2>&1; then
     if curl -s "$APP_URL" >/dev/null 2>&1; then
+      APP_STARTED="true"
       break
     fi
   fi
+  if ! kill -0 "$APP_PID" >/dev/null 2>&1; then
+    APP_EXIT_CODE=1
+    wait "$APP_PID" || APP_EXIT_CODE=$?
+    echo "SRT Coder stopped before startup completed."
+    if [[ -f "$RUNTIME_DIR/migration_error.txt" ]]; then
+      echo ""
+      cat "$RUNTIME_DIR/migration_error.txt"
+      open "$RUNTIME_DIR/migration_error.txt"
+    else
+      echo "See log: $LOG_FILE"
+      tail -n 80 "$LOG_FILE" || true
+    fi
+    exit "$APP_EXIT_CODE"
+  fi
   sleep 0.5
 done
+
+if [[ "$APP_STARTED" != "true" ]]; then
+  echo "SRT Coder did not become ready. See log: $LOG_FILE"
+  tail -n 80 "$LOG_FILE" || true
+  exit 1
+fi
 
 echo "SRT Coder running in this terminal (PID $APP_PID). Log: $LOG_FILE"
 echo "Close this terminal window to stop SRT Coder."

@@ -3,17 +3,29 @@ from __future__ import annotations
 from typing import Optional
 
 from config import CODINGS_JSON
+from domain.differentiation_migration import CODING_SCHEMA_VERSION, coding_payload_uses_legacy_schema
 from models import CodingEntry
 from storage.fs_store import read_json, write_json
 
 
 def list_codings() -> list[CodingEntry]:
     payload = read_json(CODINGS_JSON, default={"codings": []})
+    if any(
+        isinstance(coding, dict) and coding_payload_uses_legacy_schema(coding)
+        for coding in payload.get("codings", [])
+    ):
+        raise RuntimeError(
+            "Legacy Differentiation data reached the repository before startup migration. "
+            "Stop the server and send the full error message to Arthur."
+        )
     return [CodingEntry.model_validate(c) for c in payload.get("codings", [])]
 
 
 def save_codings(codings: list[CodingEntry]) -> None:
-    payload = {"codings": [c.model_dump(mode="json") for c in codings]}
+    payload = {
+        "schema_version": CODING_SCHEMA_VERSION,
+        "codings": [c.model_dump(mode="json") for c in codings],
+    }
     write_json(CODINGS_JSON, payload)
 
 

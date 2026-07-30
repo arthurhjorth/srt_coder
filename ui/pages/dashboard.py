@@ -25,7 +25,11 @@ def render_dashboard() -> None:
         ui.label("Pick an existing analysis or create a new one for a file.").classes(
             "text-sm text-gray-700"
         )
-        ui.button("Open agreement tool", on_click=lambda: ui.navigate.to("/agreement")).props("outline")
+        with ui.row().classes("gap-2 flex-wrap"):
+            ui.button("Open agreement tool", on_click=lambda: ui.navigate.to("/agreement")).props("outline")
+            ui.button("Review schema migration", on_click=lambda: ui.navigate.to("/migration-review")).props(
+                "outline"
+            )
         import_status = ui.label("").classes("text-sm text-gray-700")
         srt_upload_status = ui.label("").classes("text-sm text-gray-700")
 

@@ -5,5 +5,7 @@ interview_data/
 .nicegui/
 coded_data/analyses.json
 coded_data/codings.json
+coded_data/old_schema_analyses/
+migration_backups/
 *.pyc
 .DS_Store

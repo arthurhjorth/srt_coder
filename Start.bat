@@ -46,7 +46,18 @@ echo SRT Coder running in this terminal.
 echo Close this terminal window to stop SRT Coder.
 
 "%CD%\.venv\Scripts\python.exe" "%CD%\app.py"
-exit /b %ERRORLEVEL%
+set "APP_EXIT_CODE=%ERRORLEVEL%"
+if not "%APP_EXIT_CODE%"=="0" (
+    echo.
+    if exist "%RUNTIME_DIR%\migration_error.txt" (
+        type "%RUNTIME_DIR%\migration_error.txt"
+    ) else (
+        echo SRT Coder stopped with exit code %APP_EXIT_CODE%.
+    )
+    echo.
+    pause
+)
+exit /b %APP_EXIT_CODE%
 
 :resolve_uv_bin
 if exist "%CD%\.local\bin\uv.exe" (

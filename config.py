@@ -8,6 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent
 INTERVIEW_DATA_DIR = BASE_DIR / "interview_data"
 CODED_DATA_DIR = BASE_DIR / "coded_data"
 EXPORTS_DIR = CODED_DATA_DIR / "exports"
+RUNTIME_DIR = BASE_DIR / ".runtime"
 USERS_JSON = CODED_DATA_DIR / "users.json"
 ANALYSES_JSON = CODED_DATA_DIR / "analyses.json"
 CODINGS_JSON = CODED_DATA_DIR / "codings.json"

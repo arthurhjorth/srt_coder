@@ -28,6 +28,6 @@ zip -r "$OUT_DIR/$ZIP_NAME" \
   coded_data \
   interview_data \
   tests \
-  -x "*.DS_Store" "*/.git/*" "*/.venv/*" "*/.nicegui/*" "*/__pycache__/*" "coded_data/exports/*" "release/*"
+  -x "*.DS_Store" "*/.git/*" "*/.venv/*" "*/.nicegui/*" "*/__pycache__/*" "coded_data/exports/*" "coded_data/old_schema_analyses/*" "release/*"
 
 echo "Created: $OUT_DIR/$ZIP_NAME"

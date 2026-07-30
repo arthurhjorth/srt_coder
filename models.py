@@ -30,9 +30,6 @@ class Perspective(BaseModel):
     why_is_it_relevant_to_take_this_perspective_extract: Optional[str] = None
     why_is_it_relevant_to_take_this_perspective_extract_comment: Optional[str] = None
 
-    how_does_this_particular_perspective_add_complexity_or_difficulty_to_the_thing_being_considered_extract: Optional[str] = None
-    how_does_this_particular_perspective_add_complexity_or_difficulty_to_the_thing_being_considered_extract_comment: Optional[str] = None
-
     what_are_the_implications_extract: Optional[str] = None
     what_are_the_implications_extract_comment: Optional[str] = None
 
@@ -47,17 +44,10 @@ class Differentiation(BaseModel):
     why_is_it_important_extract: Optional[str] = None
     why_is_it_important_extract_comment: Optional[str] = None
 
-    why_is_this_a_thing_or_how_did_it_happen_extract: Optional[str] = None
-    why_is_this_a_thing_or_how_did_it_happen_extract_comment: Optional[str] = None
-
     perspectives_extract: Optional[list[Perspective]] = None
 
     why_is_it_important_to_take_different_perspectives_extract: Optional[str] = None
     why_is_it_important_to_take_different_perspectives_extract_comment: Optional[str] = None
-
-    what_is_wrong_with_taking_a_unitary_perspective_extract: Optional[str] = None
-    what_is_wrong_with_taking_a_unitary_perspective_extract_comment: Optional[str] = None
-
 
 class ConditionAntecedentReason(BaseModel):
     description_an_event_or_state_that_contributes_or_contributed_towards_increasing_the_likelihood_of_the_outcome_or_towards_explaining_why_it_happened_extract: Optional[str] = None

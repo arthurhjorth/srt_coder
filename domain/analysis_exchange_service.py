@@ -7,6 +7,7 @@ import re
 import uuid
 
 from config import EXPORTS_DIR
+from domain.differentiation_migration import CODING_SCHEMA_VERSION, migrate_export_payload
 from domain.transcript_service import list_interview_files
 from models import Analysis, CodingEntry, User
 from storage.analyses_repo import list_analyses, save_analyses
@@ -14,7 +15,7 @@ from storage.coding_repo import list_codings, save_codings
 from storage.users_repo import list_users, save_users
 
 
-EXPORT_VERSION = "1"
+EXPORT_VERSION = "2"
 
 
 def _utc_now_iso() -> str:
@@ -56,6 +57,7 @@ def export_analysis_to_file(*, analysis_id: str) -> Path:
 
     payload = {
         "export_version": EXPORT_VERSION,
+        "coding_schema_version": CODING_SCHEMA_VERSION,
         "exported_at": _utc_now_iso(),
         "analyses": [target.model_dump(mode="json")],
         "codings": [c.model_dump(mode="json") for c in codings],
@@ -72,6 +74,8 @@ def export_analysis_to_file(*, analysis_id: str) -> Path:
 def import_analyses_from_payload(payload: dict) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("Import payload must be a JSON object")
+
+    payload = migrate_export_payload(payload)
 
     analyses_raw = payload.get("analyses")
     if analyses_raw is None and payload.get("analysis") is not None:

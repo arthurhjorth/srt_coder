@@ -33,16 +33,13 @@ from ui.components.transcript_view import render_transcript_segments
 
 FIELD_LABELS = {
     "thing_being_considered_extract": "Thing being considered",
-    "context_why_is_this_thing_being_considered_or_talked_about_extract": "Context: why considered or discussed",
-    "why_is_it_important_extract": "Why is it important?",
-    "why_is_this_a_thing_or_how_did_it_happen_extract": "Why is this a thing or how did it happen?",
+    "context_why_is_this_thing_being_considered_or_talked_about_extract": "Context",
+    "why_is_it_important_extract": "Why considered or important",
     "why_is_it_important_to_take_different_perspectives_extract": "Why important to take different perspectives?",
-    "what_is_wrong_with_taking_a_unitary_perspective_extract": "What is wrong with a unitary perspective?",
-    "perspectives_extract": "Perspectives",
+    "perspectives_extract": "Different perspectives or dimensions (min. 2)",
     "what_is_this_perspective_extract": "What is this perspective?",
     "why_is_it_relevant_to_take_this_perspective_extract": "Why is this perspective relevant?",
-    "how_does_this_particular_perspective_add_complexity_or_difficulty_to_the_thing_being_considered_extract": "How does this perspective add complexity/difficulty?",
-    "what_are_the_implications_extract": "Implications",
+    "what_are_the_implications_extract": "What are the implications? (Does it e.g. add complexity?)",
     "outcome_something_that_can_happen_or_has_happened_event_something_that_can_be_or_is_the_case_state_extract": "Outcome / event / state",
     "certitude_about_outcome_or_epistemic_modality_does_the_person_say_that_this_will_happen_or_could_it_happen_or_might_it_happen_extract": "Certitude / epistemic modality",
     "epistemic_stance_extract": "Epistemic stance",
@@ -872,9 +869,7 @@ def render_analysis_page(analysis_id: str) -> None:
                     "thing_being_considered_extract",
                     "context_why_is_this_thing_being_considered_or_talked_about_extract",
                     "why_is_it_important_extract",
-                    "why_is_this_a_thing_or_how_did_it_happen_extract",
                     "why_is_it_important_to_take_different_perspectives_extract",
-                    "what_is_wrong_with_taking_a_unitary_perspective_extract",
                 ]:
                     _render_text_field(field)
 
@@ -894,7 +889,6 @@ def render_analysis_page(analysis_id: str) -> None:
                         for field in [
                             "what_is_this_perspective_extract",
                             "why_is_it_relevant_to_take_this_perspective_extract",
-                            "how_does_this_particular_perspective_add_complexity_or_difficulty_to_the_thing_being_considered_extract",
                             "what_are_the_implications_extract",
                         ]:
                             cmt_field = f"{field}_comment"

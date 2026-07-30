@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import uuid
 
-from models import CodingEntry, Comparison, Differentiation, Nuance
+from models import CodingEntry, Comparison, Differentiation, Nuance, Perspective
 from parsing.srt_parser import TranscriptSegment
 from storage.coding_repo import list_codings, list_codings_for_analysis, save_codings
 
@@ -155,7 +155,11 @@ def create_object_entry(
         object_type=object_type,
         note=(note or "").strip() or None,
         comparison=Comparison() if object_type == "comparison" else None,
-        differentiation=Differentiation() if object_type == "differentiation" else None,
+        differentiation=(
+            Differentiation(perspectives_extract=[Perspective(), Perspective()])
+            if object_type == "differentiation"
+            else None
+        ),
         nuance=Nuance() if object_type == "nuance" else None,
         field_spans={},
         created_by=created_by.strip(),

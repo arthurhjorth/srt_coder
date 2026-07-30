@@ -1,0 +1,134 @@
+{
+  "coding_id": "fixture-from-anders-bjaeldager-analysis",
+  "analysis_id": "fixture-analysis",
+  "object_type": "differentiation",
+  "interview_file": "fixture.srt",
+  "note": "Unrelated coding metadata must survive migration.",
+  "differentiation": {
+    "thing_being_considered_extract": "thing retained",
+    "thing_being_considered_extract_comment": "thing comment retained",
+    "context_why_is_this_thing_being_considered_or_talked_about_extract": "context retained",
+    "context_why_is_this_thing_being_considered_or_talked_about_extract_comment": "context comment retained",
+    "why_is_it_important_extract": "existing important text",
+    "why_is_it_important_extract_comment": "existing important comment",
+    "why_is_this_a_thing_or_how_did_it_happen_extract": "legacy why-considered text",
+    "why_is_this_a_thing_or_how_did_it_happen_extract_comment": "legacy why-considered comment",
+    "why_is_it_important_to_take_different_perspectives_extract": "existing perspectives reason",
+    "why_is_it_important_to_take_different_perspectives_extract_comment": "existing perspectives comment",
+    "what_is_wrong_with_taking_a_unitary_perspective_extract": "legacy unitary-perspective text",
+    "what_is_wrong_with_taking_a_unitary_perspective_extract_comment": "legacy unitary-perspective comment",
+    "perspectives_extract": [
+      {
+        "what_is_this_perspective_extract": "perspective zero",
+        "why_is_it_relevant_to_take_this_perspective_extract": "relevance zero",
+        "how_does_this_particular_perspective_add_complexity_or_difficulty_to_the_thing_being_considered_extract": "legacy complexity zero",
+        "how_does_this_particular_perspective_add_complexity_or_difficulty_to_the_thing_being_considered_extract_comment": "legacy complexity comment zero",
+        "what_are_the_implications_extract": "existing implications zero",
+        "what_are_the_implications_extract_comment": "existing implications comment zero"
+      },
+      {
+        "what_is_this_perspective_extract": "perspective one",
+        "why_is_it_relevant_to_take_this_perspective_extract": "relevance one",
+        "how_does_this_particular_perspective_add_complexity_or_difficulty_to_the_thing_being_considered_extract": "legacy complexity one",
+        "how_does_this_particular_perspective_add_complexity_or_difficulty_to_the_thing_being_considered_extract_comment": null,
+        "what_are_the_implications_extract": null,
+        "what_are_the_implications_extract_comment": null
+      }
+    ]
+  },
+  "field_spans": {
+    "differentiation.why_is_it_important_extract": [
+      {
+        "start_segment_id": "seg-00001",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00001",
+        "end_char_offset": 4,
+        "selected_text": "important-target-span"
+      }
+    ],
+    "differentiation.why_is_this_a_thing_or_how_did_it_happen_extract": [
+      {
+        "start_segment_id": "seg-00002",
+        "start_char_offset": 1,
+        "end_segment_id": "seg-00002",
+        "end_char_offset": 5,
+        "selected_text": "why-source-span"
+      }
+    ],
+    "differentiation.why_is_it_important_to_take_different_perspectives_extract": [
+      {
+        "start_segment_id": "seg-00003",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00003",
+        "end_char_offset": 3,
+        "selected_text": "perspectives-target-span"
+      }
+    ],
+    "differentiation.what_is_wrong_with_taking_a_unitary_perspective_extract": [
+      {
+        "start_segment_id": "seg-00004",
+        "start_char_offset": 2,
+        "end_segment_id": "seg-00004",
+        "end_char_offset": 7,
+        "selected_text": "unitary-source-span"
+      }
+    ],
+    "differentiation.perspectives_extract[0].what_are_the_implications_extract": [
+      {
+        "start_segment_id": "seg-00005",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00005",
+        "end_char_offset": 6,
+        "selected_text": "implications-target-span"
+      }
+    ],
+    "differentiation.perspectives_extract[0].how_does_this_particular_perspective_add_complexity_or_difficulty_to_the_thing_being_considered_extract": [
+      {
+        "start_segment_id": "seg-00006",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00006",
+        "end_char_offset": 4,
+        "selected_text": "complexity-source-span-zero-a"
+      },
+      {
+        "start_segment_id": "seg-00007",
+        "start_char_offset": 3,
+        "end_segment_id": "seg-00007",
+        "end_char_offset": 9,
+        "selected_text": "complexity-source-span-zero-b"
+      },
+      {
+        "start_segment_id": "seg-00008",
+        "start_char_offset": 1,
+        "end_segment_id": "seg-00008",
+        "end_char_offset": 5,
+        "selected_text": "complexity-source-span-zero-c"
+      }
+    ],
+    "differentiation.perspectives_extract[1].how_does_this_particular_perspective_add_complexity_or_difficulty_to_the_thing_being_considered_extract": [
+      {
+        "start_segment_id": "seg-00009",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00009",
+        "end_char_offset": 5,
+        "selected_text": "complexity-source-span-one-a"
+      },
+      {
+        "start_segment_id": "seg-00010",
+        "start_char_offset": 2,
+        "end_segment_id": "seg-00010",
+        "end_char_offset": 8,
+        "selected_text": "complexity-source-span-one-b"
+      }
+    ],
+    "comparison.comparand": [
+      {
+        "start_segment_id": "seg-99999",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-99999",
+        "end_char_offset": 1,
+        "selected_text": "unrelated-span-must-survive"
+      }
+    ]
+  }
+}
