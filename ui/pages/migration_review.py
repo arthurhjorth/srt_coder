@@ -34,7 +34,12 @@ def _text_panel(title: str, value: str | None, *, classes: str) -> None:
         ui.label(value or "(empty)").classes("text-sm whitespace-pre-wrap")
 
 
-def _render_change(change: FieldMigrationChange, *, store_changed: bool | None) -> None:
+def _render_change(
+    change: FieldMigrationChange,
+    *,
+    store_changed: bool | None,
+    later_schema: bool,
+) -> None:
     status_text = "Matches expected migration" if change.current_matches_expected else "Current value differs"
     status_class = (
         "bg-emerald-100 text-emerald-900"
@@ -63,17 +68,21 @@ def _render_change(change: FieldMigrationChange, *, store_changed: bool | None) 
                 )
             with ui.column().classes("flex-1 min-w-[260px] gap-2"):
                 _text_panel(
-                    "Expected immediately after migration",
+                    "Expected under the current schema",
                     change.expected_after,
                     classes="bg-emerald-50 border-emerald-300 text-emerald-950",
                 )
 
         if not change.current_matches_expected:
-            explanation = (
-                "The live store has changed since migration, so this may be a later user edit."
-                if store_changed is False
-                else "The live value does not match the deterministic migration result and should be reviewed."
-            )
+            if later_schema:
+                explanation = (
+                    "The live store is on a later schema than this backup's migration target. "
+                    "The difference may come from a later schema migration."
+                )
+            elif store_changed is False:
+                explanation = "The live store has changed since migration, so this may be a later user edit."
+            else:
+                explanation = "The live value does not match the deterministic migration result and should be reviewed."
             ui.label(explanation).classes("text-xs text-red-700")
             _text_panel(
                 "Current live value",
@@ -134,7 +143,7 @@ def render_migration_review_page() -> None:
             with ui.card().classes("w-full bg-slate-50 shadow-sm"):
                 ui.label("No completed migration backups are available yet.").classes("font-medium")
                 ui.label(
-                    "This page will populate after startup detects legacy Differentiation data and completes the "
+                    "This page will populate after startup detects an older coding schema and completes the "
                     "mandatory backup and migration."
                 ).classes("text-sm text-gray-600")
             return
@@ -169,7 +178,14 @@ def render_migration_review_page() -> None:
                         _metric("Changed fields/comments", str(review.changed_field_count))
                         _metric("Moved spans", str(review.moved_span_count))
                     counts = review.manifest.get("migration_counts") or {}
-                    if counts:
+                    recorded_steps = review.manifest.get("applied_steps")
+                    target_version = review.manifest.get("target_schema_version")
+                    counts_are_compatible = isinstance(recorded_steps, list) or (
+                        isinstance(target_version, int)
+                        and not isinstance(target_version, bool)
+                        and target_version < 3
+                    )
+                    if counts and counts_are_compatible:
                         ui.label(
                             "Manifest audit: values={values}, comments={comments}, legacy span paths={paths}, spans={spans}."
                             .format(
@@ -179,16 +195,33 @@ def render_migration_review_page() -> None:
                                 spans=counts.get("legacy_spans", 0),
                             )
                         ).classes("text-xs text-gray-600")
+                    elif counts:
+                        ui.label(
+                            "This transitional manifest predates per-step v3 audit counts; the reconstructed change "
+                            "and span totals above are authoritative."
+                        ).classes("text-xs text-amber-700")
+                    steps = review.applied_steps
+                    if steps:
+                        ui.label(f"Applied migration steps: {', '.join(str(step) for step in steps)}.").classes(
+                            "text-xs text-gray-600"
+                        )
 
                     if review.live_store_matches_migration_checksum is True:
                         ui.label(
                             "The live codings file still has the exact checksum produced by this migration."
                         ).classes("rounded bg-emerald-100 px-3 py-2 text-sm text-emerald-900")
                     elif review.live_store_matches_migration_checksum is False:
-                        ui.label(
-                            "The live codings file has changed since this migration. Individual differences may be "
-                            "legitimate later edits."
-                        ).classes("rounded bg-amber-100 px-3 py-2 text-sm text-amber-900")
+                        if review.live_store_is_later_schema:
+                            ui.label(
+                                "The live codings file is on a later schema than this historical backup's migration "
+                                "target. The checksum difference is therefore expected; individual values are compared "
+                                "against the current deterministic migration result below."
+                            ).classes("rounded bg-sky-100 px-3 py-2 text-sm text-sky-900")
+                        else:
+                            ui.label(
+                                "The live codings file has changed since this migration. Individual differences may be "
+                                "legitimate later edits."
+                            ).classes("rounded bg-amber-100 px-3 py-2 text-sm text-amber-900")
                     else:
                         ui.label(
                             "This older manifest has no post-migration checksum; individual values can still be compared."
@@ -212,7 +245,7 @@ def render_migration_review_page() -> None:
                             by_coding[change.coding_id].append(change)
                         for coding_id, changes in by_coding.items():
                             with ui.expansion(
-                                f"Differentiation object · {len(changes)} changed fields/comments",
+                                f"{changes[0].object_label.split(' ·')[0]} object · {len(changes)} changed fields/comments",
                                 icon="account_tree",
                                 value=True,
                             ).classes("w-full"):
@@ -221,6 +254,7 @@ def render_migration_review_page() -> None:
                                     _render_change(
                                         change,
                                         store_changed=review.live_store_matches_migration_checksum,
+                                        later_schema=review.live_store_is_later_schema,
                                     )
 
         backup_select.on("update:model-value", lambda _event: redraw())
