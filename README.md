@@ -20,6 +20,8 @@ It supports:
 - Span chips are clickable and jump to the referenced transcript location.
 - New span selections ignore leading and trailing whitespace while preserving
   whitespace inside the selected passage.
+- Differentiation context remains stored for compatibility but is hidden from
+  coding and excluded from agreement comparison.
 
 ## High-Level Workflow
 
@@ -84,9 +86,11 @@ Primary models live in `models.py`.
   - optional span anchors and `field_spans`
 - `Differentiation`
   - includes nested `perspectives_extract: list[Perspective]`
+  - retains its legacy context fields in stored data, although the UI ignores them
 - `Comparison`
   - includes nested `comparators: list[ComparatorDetail]`
 - `Nuance`
+  - uses `uncertainty_about_causality_extract` at the parent level
   - includes nested `condition_antecedent_reason: list[ConditionAntecedentReason]`
 
 ## Import / Export
@@ -125,13 +129,19 @@ JSON files under `coded_data/`:
 - `codings.json`
 - `exports/` (generated export files)
 
-### Automatic Differentiation Schema Migration
+### Automatic Coding Schema Migration
 
-On startup, the server checks raw coding data for the legacy Differentiation
-fields. If migration is needed, it first creates a timestamped, checksum-verified
-copy of both `analyses.json` and `codings.json` under
-`coded_data/old_schema_analyses/`. Only after that backup verifies successfully
-does it atomically replace `codings.json` with schema version 2.
+On startup, the server checks both the declared schema version and raw legacy
+field names. Unversioned/version-1 data runs through v1→v2 and then v2→v3;
+version-2 data runs only through v2→v3. Before any step runs, the server creates
+a timestamped, checksum-verified copy of both `analyses.json` and `codings.json`
+under `coded_data/old_schema_analyses/`. Both steps are built and validated in
+memory before one atomic replacement writes schema version 3.
+
+The v2→v3 step merges Nuance certitude/epistemic modality and top-level epistemic
+stance into **Uncertainty about causality**. A populated parent-level condition is
+appended as a new nested condition description. Values, comments, and transcript
+spans move together; existing nested condition indexes remain unchanged.
 
 If backup or migration validation fails, the server does not start and the live
 files are left untouched or restored from the verified backup. The launcher shows
@@ -140,8 +150,8 @@ a copyable diagnostic that should be sent to Arthur.
 After a migration, open **Review schema migration** from the dashboard. The
 read-only page compares the immutable backup, the migration's deterministic
 expected result, and the current live values. It also shows comments and span
-movement, and indicates whether the live store still matches the checksum created
-at migration time.
+movement, identifies each applied migration step, and distinguishes a later schema
+upgrade from ordinary edits when reviewing historical backups.
 
 Interview sources under `interview_data/`.
 

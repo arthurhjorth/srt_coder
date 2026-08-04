@@ -114,14 +114,16 @@ not by model validation.
 Each comparator has comparator text, adjective text, and a list of dimensions or
 examples.
 
-`Differentiation` contains top-level context/importance fields and a list of
-`Perspective` records. Each perspective captures what it is, why it matters, and
-its implications (including whether it adds complexity).
+`Differentiation` contains top-level importance fields and a list of `Perspective`
+records. Its context value/comment remain in the persisted model for lossless
+compatibility, but coding and agreement views intentionally ignore them. Each
+perspective captures what it is, why it matters, and its implications (including
+whether it adds complexity).
 
-`Nuance` describes an outcome/event/state, modality, epistemic stance, negation,
-stance, conditions, and sufficiency. Its `condition_antecedent_reason` list holds
-`ConditionAntecedentReason` records for descriptions, impact direction,
-reasoning, certainty, and epistemic stance.
+`Nuance` describes an outcome/event/state, uncertainty about causality, negation,
+preference stance, nested conditions, and sufficiency. Its
+`condition_antecedent_reason` list holds `ConditionAntecedentReason` records for
+descriptions, impact direction, reasoning, certainty, and epistemic stance.
 
 Every extract field and its comment are plain strings. Lists are optional and are
 created incrementally in the UI.
@@ -256,7 +258,7 @@ the caller.
 - `storage/analyses_repo.py` reads/writes `{ "analyses": [...] }` and looks up by
   analysis ID.
 - `storage/coding_repo.py` reads/writes
-  `{ "schema_version": 2, "codings": [...] }`, rejects unresolved legacy data,
+  `{ "schema_version": 3, "codings": [...] }`, rejects unresolved legacy data,
   requires an analysis ID for scoped listing, and looks up coding IDs.
 
 Every save serializes and rewrites the entire collection. Repository functions do
@@ -286,24 +288,30 @@ documents their formats and roles, not their content.
 
 ### Startup schema migration
 
-`domain/differentiation_migration.py` inspects raw coding JSON before Pydantic
-validation. When it finds retired Differentiation keys, it acquires a startup
-lock and creates a timestamped backup under
+`domain/differentiation_migration.py` is the versioned coding-schema migration
+pipeline. It inspects the declared version and raw coding JSON before Pydantic
+validation. Unversioned/version-1 data runs v1→v2→v3, version-2 data runs v2→v3,
+and raw legacy-key detection repairs inconsistent declarations. Before running
+the selected steps it acquires a startup lock and creates a timestamped backup under
 `coded_data/old_schema_analyses/`. The backup contains byte-identical
 `analyses.json` and `codings.json` files plus a manifest with SHA-256 hashes,
-record counts, and the detected legacy records.
+record counts, source/target versions, applied steps, and affected coding IDs.
 
-Only after backup verification does the migration merge retired values, comments,
-and span paths into the retained fields and atomically replace `codings.json`.
-The migrated store is schema version 2. Failed post-write validation restores the
-verified original; any migration failure aborts server startup and writes a
-copyable diagnostic to `.runtime/migration_error.txt`.
+Only after backup verification does the pipeline run every required step in
+memory. v1→v2 merges the retired Differentiation fields. v2→v3 merges Nuance
+certitude/epistemic modality and top-level epistemic stance into uncertainty about
+causality, then appends a populated parent condition as a nested condition
+description. Values, comments, and span objects move together without reindexing
+existing nested conditions. The pipeline validates the complete schema-version-3
+result and atomically replaces `codings.json` once. Failed post-write validation
+restores the verified original; any migration failure aborts server startup and
+writes a copyable diagnostic to `.runtime/migration_error.txt`.
 
-Future manifests also record migrated coding IDs, populated value/comment counts,
-legacy span path/span counts, completion time, and the post-migration coding-store
-checksum. `domain/migration_review_service.py` uses the immutable backup and pure
-migration function to reconstruct the expected version-2 state without writing
-anything.
+Manifests also record per-step populated value/comment counts, legacy span
+path/span counts, created nested conditions, completion time, and the
+post-migration coding-store checksum. `domain/migration_review_service.py` uses
+the immutable backup and pure migration functions to reconstruct the current
+expected state without writing anything.
 
 ## 8. Analysis and coding services
 
@@ -354,7 +362,7 @@ analysis owner or coding creators. It writes a timestamped, slugged JSON file:
 ```json
 {
   "export_version": "2",
-  "coding_schema_version": 2,
+  "coding_schema_version": 3,
   "exported_at": "UTC ISO timestamp",
   "analyses": [],
   "codings": [],
@@ -367,9 +375,9 @@ can also include password hashes, so it must be handled as sensitive data.
 
 ### Import
 
-The importer accepts `analyses` or the older singular `analysis` key. Legacy
-Differentiation bundles are migrated in memory before validation; the uploaded
-file is never modified. It then:
+The importer accepts `analyses` or the older singular `analysis` key. Version-1
+and version-2 bundles are migrated sequentially in memory before validation; the
+uploaded file is never modified. It then:
 
 1. adds missing users by case-insensitive username;
 2. skips analyses whose transcript filename is not locally available;
@@ -575,16 +583,19 @@ node/link count subject to large caps.
 ## 14. Migration review UI
 
 `ui/pages/migration_review.py` lists valid timestamped backup directories and
-renders a read-only three-state comparison: retained content before migration,
-content moved from retiring fields, and the deterministic expected result. It
-also compares expected values and span ordering with the current live coding by
-ID.
+renders a read-only three-state comparison for both migration generations:
+retained content before migration, content moved from retiring fields, and the
+deterministic expected result. It also compares expected values and span ordering
+with the current live coding by ID.
 
 Blue panels represent retained data, amber panels represent migrated legacy data,
 green panels represent the expected result, and red panels flag current values
-that differ. The page uses the manifest's post-migration checksum to distinguish
-an unchanged migrated store from one that has received later edits. It never
-modifies backup or live data and is authentication-gated.
+that differ. The page uses schema versions and the manifest's post-migration
+checksum to distinguish an unchanged migrated store, a later schema upgrade, and
+later edits. For older or transitional manifests without an explicit step list,
+the review infers the step from the backed-up schema and raw retiring keys without
+modifying the manifest. It never modifies backup or live data and is
+authentication-gated.
 
 ## 15. Tests
 
@@ -602,8 +613,9 @@ mixed-version detection, legacy imports, and failure messages. There are no test
 for most agreement UI rendering, password hashing, concurrent ordinary writes,
 nested-list span reindexing, route authorization, or full end-to-end behavior.
 
-Migration-review service tests cover before/expected/current reconstruction,
-checksum-based later-edit detection, backup discovery, and read-only behavior.
+Migration-review service tests cover v1 and v2 before/expected/current
+reconstruction, checksum-based later-edit detection, historical-schema detection,
+backup discovery, and read-only behavior.
 
 Tests monkeypatch module globals manually rather than using pytest fixtures or
 `monkeypatch`; restoration happens in `finally` blocks.
@@ -621,7 +633,8 @@ The most important gaps between existing documentation and current code are:
 - the current object-first editor supersedes the old `coder.py`, analysis panel,
   and Comparison-only schema form;
 - export already includes field spans through full model serialization;
-- storage locking and schema versioning remain unimplemented;
+- ordinary save operations still lack locking, while startup schema migration has
+  its own lock and versioned pipeline;
 - the README advertises `Stop.command`, which is absent; and
 - `implementation.md` is useful history, not a reliable completion checklist.
 
