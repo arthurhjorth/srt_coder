@@ -11,6 +11,7 @@ from domain.agreement_service import (
     AgreementReport,
     AgreementRules,
     AgreementSource,
+    IGNORED_AGREEMENT_FIELD_PATHS,
     NormalizedAnnotation,
     build_agreement_report,
     load_agreement_export,
@@ -346,11 +347,20 @@ def _coding_payload(coding) -> tuple[str, dict]:
     dumped = coding.model_dump(mode="json", exclude_none=True)
     object_type = str(dumped.get("object_type") or "")
     if object_type and isinstance(dumped.get(object_type), dict):
-        return object_type, dumped[object_type]
+        return object_type, _agreement_visible_payload(object_type, dumped[object_type])
     for candidate in ("comparison", "differentiation", "nuance"):
         if isinstance(dumped.get(candidate), dict):
-            return candidate, dumped[candidate]
+            return candidate, _agreement_visible_payload(candidate, dumped[candidate])
     return object_type or "coding", {}
+
+
+def _agreement_visible_payload(object_type: str, payload: dict) -> dict:
+    visible = dict(payload)
+    prefix = f"{object_type}."
+    for field_path in IGNORED_AGREEMENT_FIELD_PATHS:
+        if field_path.startswith(prefix):
+            visible.pop(field_path[len(prefix) :], None)
+    return visible
 
 
 def _coding_root_key(coding, fallback_index: int) -> str:

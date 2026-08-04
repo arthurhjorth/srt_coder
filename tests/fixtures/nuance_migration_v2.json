@@ -1,0 +1,128 @@
+{
+  "coding_id": "fixture-nuance-v2",
+  "analysis_id": "fixture-analysis",
+  "interview_file": "fixture.srt",
+  "object_type": "nuance",
+  "note": "unrelated note must survive",
+  "nuance": {
+    "outcome_something_that_can_happen_or_has_happened_event_something_that_can_be_or_is_the_case_state_extract": "retained outcome",
+    "uncertainty_about_causality_extract": "existing uncertainty",
+    "uncertainty_about_causality_extract_comment": "existing uncertainty comment",
+    "certitude_about_outcome_or_epistemic_modality_does_the_person_say_that_this_will_happen_or_could_it_happen_or_might_it_happen_extract": "legacy certainty",
+    "certitude_about_outcome_or_epistemic_modality_does_the_person_say_that_this_will_happen_or_could_it_happen_or_might_it_happen_extract_comment": "legacy certainty comment",
+    "epistemic_stance_extract": "legacy epistemic stance",
+    "epistemic_stance_extract_comment": "legacy epistemic stance comment",
+    "negation_or_not_extract": "retained negation",
+    "stance_does_the_person_want_this_or_does_the_person_not_want_this_extract": "retained preference stance",
+    "condition_antecedent_reason_extract": "legacy parent condition",
+    "condition_antecedent_reason_extract_comment": "legacy parent condition comment",
+    "condition_antecedent_reason": [
+      {
+        "description_an_event_or_state_that_contributes_or_contributed_towards_increasing_the_likelihood_of_the_outcome_or_towards_explaining_why_it_happened_extract": "existing nested condition",
+        "direction_of_impact_increase_or_decrease_the_likelihood_extract": "increase",
+        "epistemic_stance_extract": "nested stance must remain"
+      }
+    ],
+    "sufficiency_does_person_state_that_these_are_sufficient_conditions_extract": "retained sufficiency"
+  },
+  "field_spans": {
+    "nuance.uncertainty_about_causality_extract": [
+      {
+        "start_segment_id": "seg-00001",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00001",
+        "end_char_offset": 4,
+        "selected_text": "target span"
+      }
+    ],
+    "nuance.certitude_about_outcome_or_epistemic_modality_does_the_person_say_that_this_will_happen_or_could_it_happen_or_might_it_happen_extract": [
+      {
+        "start_segment_id": "seg-00002",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00002",
+        "end_char_offset": 4,
+        "selected_text": "certainty span one"
+      },
+      {
+        "start_segment_id": "seg-00003",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00003",
+        "end_char_offset": 4,
+        "selected_text": "certainty span two"
+      }
+    ],
+    "nuance.epistemic_stance_extract": [
+      {
+        "start_segment_id": "seg-00004",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00004",
+        "end_char_offset": 4,
+        "selected_text": "epistemic span"
+      }
+    ],
+    "nuance.certitude_about_outcome_or_epistemic_modality_does_the_person_say_that_this_will_happen_or_could_it_happen_or_might_it_happen_extract_comment": [
+      {
+        "start_segment_id": "seg-00005",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00005",
+        "end_char_offset": 4,
+        "selected_text": "certainty comment span"
+      }
+    ],
+    "nuance.epistemic_stance_extract_comment": [
+      {
+        "start_segment_id": "seg-00006",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00006",
+        "end_char_offset": 4,
+        "selected_text": "epistemic comment span"
+      }
+    ],
+    "nuance.condition_antecedent_reason_extract": [
+      {
+        "start_segment_id": "seg-00007",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00007",
+        "end_char_offset": 4,
+        "selected_text": "parent condition span"
+      }
+    ],
+    "nuance.condition_antecedent_reason_extract_comment": [
+      {
+        "start_segment_id": "seg-00008",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00008",
+        "end_char_offset": 4,
+        "selected_text": "parent condition comment span"
+      }
+    ],
+    "nuance.condition_antecedent_reason[0].description_an_event_or_state_that_contributes_or_contributed_towards_increasing_the_likelihood_of_the_outcome_or_towards_explaining_why_it_happened_extract": [
+      {
+        "start_segment_id": "seg-00009",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00009",
+        "end_char_offset": 4,
+        "selected_text": "existing nested span"
+      }
+    ],
+    "nuance.condition_antecedent_reason[0].epistemic_stance_extract": [
+      {
+        "start_segment_id": "seg-00009",
+        "start_char_offset": 5,
+        "end_segment_id": "seg-00009",
+        "end_char_offset": 9,
+        "selected_text": "nested stance span"
+      }
+    ],
+    "comparison.comparand": [
+      {
+        "start_segment_id": "seg-00010",
+        "start_char_offset": 0,
+        "end_segment_id": "seg-00010",
+        "end_char_offset": 4,
+        "selected_text": "unrelated span"
+      }
+    ]
+  },
+  "created_by": "fixture-user"
+}

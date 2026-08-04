@@ -10,15 +10,19 @@ from storage.fs_store import read_json, write_json
 
 def list_codings() -> list[CodingEntry]:
     payload = read_json(CODINGS_JSON, default={"codings": []})
-    if any(
-        isinstance(coding, dict) and coding_payload_uses_legacy_schema(coding)
-        for coding in payload.get("codings", [])
+    raw_codings = payload.get("codings", [])
+    version = payload.get("schema_version")
+    version_is_legacy = version not in {None, CODING_SCHEMA_VERSION} or (
+        version is None and bool(raw_codings)
+    )
+    if version_is_legacy or any(
+        isinstance(coding, dict) and coding_payload_uses_legacy_schema(coding) for coding in raw_codings
     ):
         raise RuntimeError(
-            "Legacy Differentiation data reached the repository before startup migration. "
+            "Legacy coding-schema data reached the repository before startup migration. "
             "Stop the server and send the full error message to Arthur."
         )
-    return [CodingEntry.model_validate(c) for c in payload.get("codings", [])]
+    return [CodingEntry.model_validate(c) for c in raw_codings]
 
 
 def save_codings(codings: list[CodingEntry]) -> None:

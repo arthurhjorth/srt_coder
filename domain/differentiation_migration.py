@@ -15,7 +15,9 @@ import time
 import uuid
 
 
-CODING_SCHEMA_VERSION = 2
+CODING_SCHEMA_VERSION = 3
+SCHEMA_V1_TO_V2 = "v1_to_v2"
+SCHEMA_V2_TO_V3 = "v2_to_v3"
 
 OLD_WHY = "why_is_this_a_thing_or_how_did_it_happen_extract"
 TARGET_WHY = "why_is_it_important_extract"
@@ -26,7 +28,24 @@ OLD_COMPLEXITY = (
 )
 TARGET_IMPLICATIONS = "what_are_the_implications_extract"
 
+OLD_CERTAINTY = (
+    "certitude_about_outcome_or_epistemic_modality_does_the_person_say_that_this_will_happen_or_could_it_happen_or_might_it_happen_extract"
+)
+OLD_EPISTEMIC_STANCE = "epistemic_stance_extract"
+TARGET_UNCERTAINTY = "uncertainty_about_causality_extract"
+OLD_PARENT_CONDITION = "condition_antecedent_reason_extract"
+CONDITION_LIST = "condition_antecedent_reason"
+TARGET_CONDITION_DESCRIPTION = (
+    "description_an_event_or_state_that_contributes_or_contributed_towards_increasing_the_likelihood_of_the_outcome_or_towards_explaining_why_it_happened_extract"
+)
+
 _LEGACY_FIELD_NAMES = {OLD_WHY, OLD_UNITARY, OLD_COMPLEXITY}
+_V2_LEGACY_FIELD_NAMES = {OLD_CERTAINTY, OLD_EPISTEMIC_STANCE, OLD_PARENT_CONDITION}
+_V2_LEGACY_SPAN_PATHS = {
+    f"nuance.{field_name}{suffix}"
+    for field_name in _V2_LEGACY_FIELD_NAMES
+    for suffix in ("", "_comment")
+}
 _TOP_LEVEL_MAPPINGS = (
     (OLD_WHY, TARGET_WHY),
     (OLD_UNITARY, TARGET_PERSPECTIVES),
@@ -41,6 +60,7 @@ class MigrationResult:
     status: str
     migrated_codings: int = 0
     backup_dir: Path | None = None
+    applied_steps: tuple[str, ...] = ()
 
 
 class MigrationStartupError(RuntimeError):
@@ -65,12 +85,12 @@ class MigrationStartupError(RuntimeError):
 
 
 def _merge_text(target, legacy):
-    target_text = target.strip() if isinstance(target, str) else target
-    legacy_text = legacy.strip() if isinstance(legacy, str) else legacy
-    if target_text and legacy_text:
-        return f"{target_text}\n{legacy_text}"
-    if legacy_text:
-        return legacy_text
+    target_has_content = isinstance(target, str) and target != ""
+    legacy_has_content = isinstance(legacy, str) and legacy != ""
+    if target_has_content and legacy_has_content:
+        return f"{target}\n{legacy}"
+    if legacy_has_content:
+        return legacy
     return target
 
 
@@ -78,8 +98,13 @@ def _merge_field(payload: dict, old_name: str, target_name: str) -> None:
     if old_name not in payload:
         return
     legacy_value = payload.pop(old_name)
+    if legacy_value is not None and not isinstance(legacy_value, str):
+        raise ValueError(f"Legacy field {old_name} must contain text or null")
     if target_name in payload:
-        payload[target_name] = _merge_text(payload.get(target_name), legacy_value)
+        target_value = payload.get(target_name)
+        if target_value is not None and not isinstance(target_value, str):
+            raise ValueError(f"Target field {target_name} must contain text or null")
+        payload[target_name] = _merge_text(target_value, legacy_value)
     elif legacy_value is not None:
         payload[target_name] = legacy_value
 
@@ -100,7 +125,7 @@ def _rekey_span_list(field_spans: dict, source_key: str, target_key: str) -> Non
         field_spans[target_key] = combined
 
 
-def migrate_coding_entry_payload(payload: dict) -> dict:
+def migrate_v1_to_v2_coding_entry_payload(payload: dict) -> dict:
     """Return a version-2 coding dictionary without mutating the input."""
     migrated = deepcopy(payload)
     differentiation = migrated.get("differentiation")
@@ -145,7 +170,7 @@ def migrate_coding_entry_payload(payload: dict) -> dict:
     return migrated
 
 
-def coding_payload_uses_legacy_schema(payload: dict) -> bool:
+def coding_payload_needs_v1_to_v2(payload: dict) -> bool:
     differentiation = payload.get("differentiation")
     if isinstance(differentiation, dict):
         if any(name in differentiation for name in (OLD_WHY, f"{OLD_WHY}_comment", OLD_UNITARY, f"{OLD_UNITARY}_comment")):
@@ -163,20 +188,165 @@ def coding_payload_uses_legacy_schema(payload: dict) -> bool:
     return False
 
 
-def migrate_export_payload(payload: dict) -> dict:
-    """Migrate an import/agreement bundle in memory; never alter its source file."""
-    version = payload.get("coding_schema_version")
+def _has_text(value) -> bool:
+    return isinstance(value, str) and value != ""
+
+
+def _has_span_data(field_spans: dict | None, field_path: str) -> bool:
+    if not isinstance(field_spans, dict) or field_path not in field_spans:
+        return False
+    spans = field_spans[field_path]
+    if not isinstance(spans, list):
+        raise ValueError(f"Legacy span path {field_path} must contain a list")
+    return bool(spans)
+
+
+def migrate_v2_to_v3_coding_entry_payload(payload: dict) -> dict:
+    """Return a version-3 coding dictionary without mutating the input."""
+    migrated = deepcopy(payload)
+    nuance = migrated.get("nuance")
+    field_spans = migrated.get("field_spans")
+
+    if isinstance(nuance, dict):
+        for old_name in (OLD_CERTAINTY, OLD_EPISTEMIC_STANCE):
+            _merge_field(nuance, old_name, TARGET_UNCERTAINTY)
+            _merge_field(nuance, f"{old_name}_comment", f"{TARGET_UNCERTAINTY}_comment")
+
+        if isinstance(field_spans, dict):
+            for old_name in (OLD_CERTAINTY, OLD_EPISTEMIC_STANCE):
+                _rekey_span_list(
+                    field_spans,
+                    f"nuance.{old_name}",
+                    f"nuance.{TARGET_UNCERTAINTY}",
+                )
+                _rekey_span_list(
+                    field_spans,
+                    f"nuance.{old_name}_comment",
+                    f"nuance.{TARGET_UNCERTAINTY}_comment",
+                )
+
+        parent_value = nuance.get(OLD_PARENT_CONDITION)
+        parent_comment = nuance.get(f"{OLD_PARENT_CONDITION}_comment")
+        if parent_value is not None and not isinstance(parent_value, str):
+            raise ValueError(f"Legacy field {OLD_PARENT_CONDITION} must contain text or null")
+        if parent_comment is not None and not isinstance(parent_comment, str):
+            raise ValueError(f"Legacy field {OLD_PARENT_CONDITION}_comment must contain text or null")
+        parent_value_path = f"nuance.{OLD_PARENT_CONDITION}"
+        parent_comment_path = f"{parent_value_path}_comment"
+        has_parent_data = (
+            _has_text(parent_value)
+            or _has_text(parent_comment)
+            or _has_span_data(field_spans, parent_value_path)
+            or _has_span_data(field_spans, parent_comment_path)
+        )
+        nuance.pop(OLD_PARENT_CONDITION, None)
+        nuance.pop(f"{OLD_PARENT_CONDITION}_comment", None)
+
+        if has_parent_data:
+            existing_conditions = nuance.get(CONDITION_LIST)
+            if existing_conditions is None:
+                conditions: list[dict] = []
+            elif isinstance(existing_conditions, list):
+                conditions = list(existing_conditions)
+            else:
+                raise ValueError(f"nuance.{CONDITION_LIST} must contain a list")
+            condition_index = len(conditions)
+            new_condition: dict = {}
+            if parent_value is not None:
+                new_condition[TARGET_CONDITION_DESCRIPTION] = parent_value
+            if parent_comment is not None:
+                new_condition[f"{TARGET_CONDITION_DESCRIPTION}_comment"] = parent_comment
+            conditions.append(new_condition)
+            nuance[CONDITION_LIST] = conditions
+
+            if isinstance(field_spans, dict):
+                target_prefix = f"nuance.{CONDITION_LIST}[{condition_index}].{TARGET_CONDITION_DESCRIPTION}"
+                _rekey_span_list(field_spans, parent_value_path, target_prefix)
+                _rekey_span_list(field_spans, parent_comment_path, f"{target_prefix}_comment")
+        elif isinstance(field_spans, dict):
+            # Empty legacy span lists contain no annotations, but their retired paths
+            # still need to be removed from the current schema.
+            field_spans.pop(parent_value_path, None)
+            field_spans.pop(parent_comment_path, None)
+
+    return migrated
+
+
+def coding_payload_needs_v2_to_v3(payload: dict) -> bool:
+    nuance = payload.get("nuance")
+    if isinstance(nuance, dict) and any(
+        name in nuance or f"{name}_comment" in nuance
+        for name in _V2_LEGACY_FIELD_NAMES
+    ):
+        return True
+    field_spans = payload.get("field_spans")
+    if isinstance(field_spans, dict):
+        return any(str(key) in _V2_LEGACY_SPAN_PATHS for key in field_spans)
+    return False
+
+
+def coding_payload_uses_legacy_schema(payload: dict) -> bool:
+    return coding_payload_needs_v1_to_v2(payload) or coding_payload_needs_v2_to_v3(payload)
+
+
+def migrate_coding_entry_payload(payload: dict) -> dict:
+    """Return a current-schema coding dictionary without mutating the input."""
+    return migrate_v2_to_v3_coding_entry_payload(
+        migrate_v1_to_v2_coding_entry_payload(payload)
+    )
+
+
+def _validate_declared_version(version, *, field_name: str) -> int | None:
     if version is not None and (isinstance(version, bool) or not isinstance(version, int)):
-        raise ValueError("coding_schema_version must be an integer")
+        raise ValueError(f"{field_name} must be an integer")
     if isinstance(version, int) and version > CODING_SCHEMA_VERSION:
         raise ValueError(f"Unsupported future coding schema version: {version}")
-    migrated = deepcopy(payload)
-    codings = migrated.get("codings")
-    if isinstance(codings, list):
-        migrated["codings"] = [
-            migrate_coding_entry_payload(coding) if isinstance(coding, dict) else coding
-            for coding in codings
+    return version
+
+
+def _required_migration_steps(payload: dict, *, version_field: str) -> tuple[str, ...]:
+    version = _validate_declared_version(payload.get(version_field), field_name=version_field)
+    codings = payload.get("codings")
+    if codings is None:
+        codings = []
+    if not isinstance(codings, list):
+        raise ValueError("codings must be a list")
+    needs_v1 = version is None or version < 2 or any(
+        isinstance(coding, dict) and coding_payload_needs_v1_to_v2(coding)
+        for coding in codings
+    )
+    needs_v2 = version is None or version < 3 or any(
+        isinstance(coding, dict) and coding_payload_needs_v2_to_v3(coding)
+        for coding in codings
+    )
+    steps: list[str] = []
+    if needs_v1:
+        steps.append(SCHEMA_V1_TO_V2)
+    if needs_v2:
+        steps.append(SCHEMA_V2_TO_V3)
+    return tuple(steps)
+
+
+def _migrate_codings(codings: list, steps: tuple[str, ...]) -> list:
+    migrated = deepcopy(codings)
+    if SCHEMA_V1_TO_V2 in steps:
+        migrated = [
+            migrate_v1_to_v2_coding_entry_payload(coding) if isinstance(coding, dict) else coding
+            for coding in migrated
         ]
+    if SCHEMA_V2_TO_V3 in steps:
+        migrated = [
+            migrate_v2_to_v3_coding_entry_payload(coding) if isinstance(coding, dict) else coding
+            for coding in migrated
+        ]
+    return migrated
+
+
+def migrate_export_payload(payload: dict) -> dict:
+    """Migrate an import/agreement bundle in memory; never alter its source file."""
+    steps = _required_migration_steps(payload, version_field="coding_schema_version")
+    migrated = deepcopy(payload)
+    migrated["codings"] = _migrate_codings(migrated.get("codings") or [], steps)
     migrated["coding_schema_version"] = CODING_SCHEMA_VERSION
     return migrated
 
@@ -197,7 +367,7 @@ def _load_store(path: Path) -> dict:
     return payload
 
 
-def _validate_version_two_store(payload: dict) -> None:
+def _validate_current_store(payload: dict) -> None:
     from models import CodingEntry
 
     if payload.get("schema_version") != CODING_SCHEMA_VERSION:
@@ -211,6 +381,11 @@ def _validate_version_two_store(payload: dict) -> None:
         if coding_payload_uses_legacy_schema(coding):
             raise ValueError(f"Coding at index {index} still contains legacy fields")
         CodingEntry.model_validate(coding)
+
+
+# Kept as a compatibility alias for tests and any local tooling written for the
+# first migration release. It now validates the current schema version.
+_validate_version_two_store = _validate_current_store
 
 
 def _write_json_temp(destination: Path, payload: dict) -> Path:
@@ -230,7 +405,7 @@ def _write_json_atomic(destination: Path, payload: dict) -> None:
         temp_path.unlink(missing_ok=True)
 
 
-def _legacy_content_counts(codings: list[dict]) -> dict[str, int]:
+def _v1_content_counts(codings: list[dict]) -> dict[str, int]:
     counts = {
         "values_with_content": 0,
         "comments_with_content": 0,
@@ -261,6 +436,110 @@ def _legacy_content_counts(codings: list[dict]) -> dict[str, int]:
                 if isinstance(spans, list):
                     counts["legacy_spans"] += len(spans)
     return counts
+
+
+def _v2_content_counts(codings: list[dict]) -> dict[str, int]:
+    counts = {
+        "values_with_content": 0,
+        "comments_with_content": 0,
+        "legacy_span_paths": 0,
+        "legacy_spans": 0,
+        "parent_conditions_created": 0,
+    }
+    for coding in codings:
+        nuance = coding.get("nuance")
+        field_spans = coding.get("field_spans")
+        if isinstance(nuance, dict):
+            for field_name in (OLD_CERTAINTY, OLD_EPISTEMIC_STANCE, OLD_PARENT_CONDITION):
+                if _has_text(nuance.get(field_name)):
+                    counts["values_with_content"] += 1
+                if _has_text(nuance.get(f"{field_name}_comment")):
+                    counts["comments_with_content"] += 1
+            if (
+                _has_text(nuance.get(OLD_PARENT_CONDITION))
+                or _has_text(nuance.get(f"{OLD_PARENT_CONDITION}_comment"))
+                or _has_span_data(field_spans, f"nuance.{OLD_PARENT_CONDITION}")
+                or _has_span_data(field_spans, f"nuance.{OLD_PARENT_CONDITION}_comment")
+            ):
+                counts["parent_conditions_created"] += 1
+        if isinstance(field_spans, dict):
+            for key, spans in field_spans.items():
+                if str(key) not in _V2_LEGACY_SPAN_PATHS:
+                    continue
+                counts["legacy_span_paths"] += 1
+                if isinstance(spans, list):
+                    counts["legacy_spans"] += len(spans)
+    return counts
+
+
+def _combined_content_counts(step_counts: dict[str, dict[str, int]]) -> dict[str, int]:
+    keys = {
+        key
+        for counts in step_counts.values()
+        for key in counts
+    }
+    return {
+        key: sum(counts.get(key, 0) for counts in step_counts.values())
+        for key in sorted(keys)
+    }
+
+
+def _span_multiset(codings: list) -> list[str]:
+    spans: list[str] = []
+    for coding in codings:
+        if not isinstance(coding, dict):
+            continue
+        field_spans = coding.get("field_spans")
+        if not isinstance(field_spans, dict):
+            continue
+        for value in field_spans.values():
+            if not isinstance(value, list):
+                raise ValueError("Every field span path must contain a list")
+            spans.extend(json.dumps(span, sort_keys=True, ensure_ascii=False) for span in value)
+    return sorted(spans)
+
+
+def _validate_lossless_transform(source: dict, migrated: dict) -> None:
+    source_codings = source.get("codings") or []
+    migrated_codings = migrated.get("codings") or []
+    if len(source_codings) != len(migrated_codings):
+        raise ValueError("Coding count changed during migration")
+    source_ids = [coding.get("coding_id") if isinstance(coding, dict) else None for coding in source_codings]
+    migrated_ids = [coding.get("coding_id") if isinstance(coding, dict) else None for coding in migrated_codings]
+    if source_ids != migrated_ids:
+        raise ValueError("Coding IDs or ordering changed during migration")
+    source_store_extras = {key: value for key, value in source.items() if key not in {"schema_version", "codings"}}
+    migrated_store_extras = {key: value for key, value in migrated.items() if key not in {"schema_version", "codings"}}
+    if source_store_extras != migrated_store_extras:
+        raise ValueError("Unrelated store metadata changed during migration")
+    if _span_multiset(source_codings) != _span_multiset(migrated_codings):
+        raise ValueError("A transcript span was added, removed, or changed during migration")
+
+    context_names = (
+        "context_why_is_this_thing_being_considered_or_talked_about_extract",
+        "context_why_is_this_thing_being_considered_or_talked_about_extract_comment",
+    )
+    for source_coding, migrated_coding in zip(source_codings, migrated_codings):
+        if not isinstance(source_coding, dict) or not isinstance(migrated_coding, dict):
+            continue
+        source_diff = source_coding.get("differentiation")
+        migrated_diff = migrated_coding.get("differentiation")
+        if isinstance(source_diff, dict):
+            if not isinstance(migrated_diff, dict):
+                raise ValueError("Differentiation data disappeared during migration")
+            for name in context_names:
+                if source_diff.get(name) != migrated_diff.get(name):
+                    raise ValueError("Differentiation context changed during migration")
+        source_nuance = source_coding.get("nuance")
+        migrated_nuance = migrated_coding.get("nuance")
+        if isinstance(source_nuance, dict):
+            if not isinstance(migrated_nuance, dict):
+                raise ValueError("Nuance data disappeared during migration")
+            existing = source_nuance.get(CONDITION_LIST)
+            if isinstance(existing, list):
+                migrated_conditions = migrated_nuance.get(CONDITION_LIST)
+                if not isinstance(migrated_conditions, list) or migrated_conditions[: len(existing)] != existing:
+                    raise ValueError("Existing nested conditions changed during migration")
 
 
 def _atomic_restore(backup_path: Path, destination: Path) -> None:
@@ -304,32 +583,31 @@ def ensure_current_coding_schema(
     codings_path: Path,
     backup_root: Path,
 ) -> MigrationResult:
-    """Back up and migrate the live coding store if legacy keys are present."""
+    """Back up and atomically migrate the live coding store to the current schema."""
     if not codings_path.exists():
         return MigrationResult(status="no_store")
 
     initial = _load_store(codings_path)
-    version = initial.get("schema_version")
-    if version is not None and (isinstance(version, bool) or not isinstance(version, int)):
+    try:
+        initial_steps = _required_migration_steps(initial, version_field="schema_version")
+    except ValueError as exc:
         raise MigrationStartupError(
-            "schema_version must be an integer",
+            str(exc),
             phase="schema_detection",
             analyses_path=analyses_path,
             codings_path=codings_path,
-        )
-    if isinstance(version, int) and version > CODING_SCHEMA_VERSION:
-        raise MigrationStartupError(
-            f"Unsupported future coding schema version: {version}",
-            phase="schema_detection",
-            analyses_path=analyses_path,
-            codings_path=codings_path,
-        )
-    needs_migration = any(
-        isinstance(coding, dict) and coding_payload_uses_legacy_schema(coding)
-        for coding in initial["codings"]
-    )
-    if not needs_migration:
-        return MigrationResult(status="current" if version == CODING_SCHEMA_VERSION else "current_unversioned")
+        ) from exc
+    if not initial_steps:
+        try:
+            _validate_current_store(initial)
+        except Exception as exc:
+            raise MigrationStartupError(
+                str(exc),
+                phase="current_schema_validation",
+                analyses_path=analyses_path,
+                codings_path=codings_path,
+            ) from exc
+        return MigrationResult(status="current")
 
     lock_path = codings_path.parent / ".schema_migration.lock"
     backup_dir: Path | None = None
@@ -344,10 +622,9 @@ def ensure_current_coding_schema(
         lock_acquired = True
         phase = "schema_recheck"
         source_payload = _load_store(codings_path)
-        if not any(
-            isinstance(coding, dict) and coding_payload_uses_legacy_schema(coding)
-            for coding in source_payload["codings"]
-        ):
+        source_steps = _required_migration_steps(source_payload, version_field="schema_version")
+        if not source_steps:
+            _validate_current_store(source_payload)
             return MigrationResult(status="current_after_wait")
         if not analyses_path.exists():
             raise FileNotFoundError(f"Required analysis store is missing: {analyses_path}")
@@ -376,35 +653,59 @@ def ensure_current_coding_schema(
         source_payload = _load_store(codings_backup)
         backup_verified = True
 
-        legacy_indices = [
-            index
-            for index, coding in enumerate(source_payload["codings"])
-            if isinstance(coding, dict) and coding_payload_uses_legacy_schema(coding)
-        ]
         manifest = {
             "created_at": datetime.now(timezone.utc).isoformat(),
             "status": "backup_verified",
             "source_files": [str(analyses_path), str(codings_path)],
+            "source_schema_version": source_payload.get("schema_version"),
             "target_schema_version": CODING_SCHEMA_VERSION,
+            "applied_steps": list(source_steps),
             "coding_count": len(source_payload["codings"]),
-            "legacy_coding_indices": legacy_indices,
-            "legacy_coding_ids": [
-                source_payload["codings"][index].get("coding_id")
-                for index in legacy_indices
-                if isinstance(source_payload["codings"][index], dict)
-            ],
-            "migration_counts": _legacy_content_counts(
-                [coding for coding in source_payload["codings"] if isinstance(coding, dict)]
-            ),
+            "affected_coding_indices": [],
+            "affected_coding_ids": [],
+            "legacy_coding_indices": [],
+            "legacy_coding_ids": [],
+            "migration_counts": {},
+            "step_migration_counts": {},
             "sha256": hashes,
         }
         _write_json_atomic(backup_dir / "migration_manifest.json", manifest)
 
         phase = "migration_build"
-        migrated_codings = [
-            migrate_coding_entry_payload(coding) if isinstance(coding, dict) else coding
-            for coding in source_payload["codings"]
+        source_codings = source_payload["codings"]
+        working_codings = deepcopy(source_codings)
+        step_counts: dict[str, dict[str, int]] = {}
+        if SCHEMA_V1_TO_V2 in source_steps:
+            step_counts[SCHEMA_V1_TO_V2] = _v1_content_counts(
+                [coding for coding in working_codings if isinstance(coding, dict)]
+            )
+            working_codings = _migrate_codings(working_codings, (SCHEMA_V1_TO_V2,))
+        if SCHEMA_V2_TO_V3 in source_steps:
+            step_counts[SCHEMA_V2_TO_V3] = _v2_content_counts(
+                [coding for coding in working_codings if isinstance(coding, dict)]
+            )
+            working_codings = _migrate_codings(working_codings, (SCHEMA_V2_TO_V3,))
+        migrated_codings = working_codings
+        affected_indices = [
+            index
+            for index, (source, migrated) in enumerate(zip(source_codings, migrated_codings))
+            if source != migrated
         ]
+        affected_ids = [
+            source_codings[index].get("coding_id")
+            for index in affected_indices
+            if isinstance(source_codings[index], dict)
+        ]
+        manifest["affected_coding_indices"] = affected_indices
+        manifest["affected_coding_ids"] = affected_ids
+        # Compatibility keys keep the original migration-review release able
+        # to list backups made by this release.
+        manifest["legacy_coding_indices"] = affected_indices
+        manifest["legacy_coding_ids"] = affected_ids
+        manifest["migration_counts"] = _combined_content_counts(step_counts)
+        manifest["step_migration_counts"] = step_counts
+        _write_json_atomic(backup_dir / "migration_manifest.json", manifest)
+
         migrated_payload = {
             key: deepcopy(value)
             for key, value in source_payload.items()
@@ -413,11 +714,8 @@ def ensure_current_coding_schema(
         migrated_payload["schema_version"] = CODING_SCHEMA_VERSION
         migrated_payload["codings"] = migrated_codings
 
-        if [coding.get("coding_id") for coding in migrated_codings if isinstance(coding, dict)] != [
-            coding.get("coding_id") for coding in source_payload["codings"] if isinstance(coding, dict)
-        ]:
-            raise ValueError("Coding IDs or ordering changed during migration")
-        _validate_version_two_store(migrated_payload)
+        _validate_lossless_transform(source_payload, migrated_payload)
+        _validate_current_store(migrated_payload)
         if migrated_payload != {
             **{key: deepcopy(value) for key, value in migrated_payload.items() if key != "codings"},
             "codings": [migrate_coding_entry_payload(coding) for coding in migrated_codings],
@@ -426,7 +724,7 @@ def ensure_current_coding_schema(
 
         phase = "temporary_file_validation"
         temp_path = _write_json_temp(codings_path, migrated_payload)
-        _validate_version_two_store(_load_store(temp_path))
+        _validate_current_store(_load_store(temp_path))
 
         phase = "atomic_replace"
         if _sha256(analyses_path) != hashes[analyses_path.name]["source"]:
@@ -438,15 +736,16 @@ def ensure_current_coding_schema(
         replaced = True
 
         phase = "post_replace_validation"
-        _validate_version_two_store(_load_store(codings_path))
+        _validate_current_store(_load_store(codings_path))
         manifest["status"] = "completed"
         manifest["completed_at"] = datetime.now(timezone.utc).isoformat()
         manifest["post_migration_codings_sha256"] = _sha256(codings_path)
         _write_json_atomic(backup_dir / "migration_manifest.json", manifest)
         return MigrationResult(
             status="migrated",
-            migrated_codings=len(legacy_indices),
+            migrated_codings=len(affected_indices),
             backup_dir=backup_dir,
+            applied_steps=source_steps,
         )
     except MigrationStartupError:
         raise

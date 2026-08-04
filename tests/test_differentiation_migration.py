@@ -216,22 +216,25 @@ def test_startup_migration_creates_verified_backup_before_atomic_replacement() -
         assert (result.backup_dir / "analyses.json").read_bytes() == analyses_bytes
         assert (result.backup_dir / "codings.json").read_bytes() == codings_bytes
         manifest = json.loads((result.backup_dir / "migration_manifest.json").read_text())
-        assert manifest["target_schema_version"] == 2
+        assert manifest["target_schema_version"] == 3
+        assert manifest["source_schema_version"] is None
+        assert manifest["applied_steps"] == ["v1_to_v2", "v2_to_v3"]
         assert manifest["status"] == "completed"
         assert manifest["coding_count"] == 1
         assert manifest["legacy_coding_ids"] == ["fixture-from-anders-bjaeldager-analysis"]
         assert manifest["migration_counts"] == {
-            "values_with_content": 4,
             "comments_with_content": 3,
             "legacy_span_paths": 4,
             "legacy_spans": 7,
+            "parent_conditions_created": 0,
+            "values_with_content": 4,
         }
         assert manifest["post_migration_codings_sha256"]
         assert manifest["sha256"]["analyses.json"]["source"] == manifest["sha256"]["analyses.json"]["backup"]
         assert manifest["sha256"]["codings.json"]["source"] == manifest["sha256"]["codings.json"]["backup"]
         assert analyses_path.read_bytes() == analyses_bytes
         migrated_store = json.loads(codings_path.read_text())
-        assert migrated_store["schema_version"] == 2
+        assert migrated_store["schema_version"] == 3
         assert not any(OLD_COMPLEXITY in key for key in migrated_store["codings"][0]["field_spans"])
 
         backup_count = len(list(backup_root.iterdir()))
@@ -279,7 +282,7 @@ def test_startup_migration_restores_verified_backup_after_post_replace_failure()
         original = (json.dumps({"codings": [_load_legacy_fixture()]}, indent=2) + "\n").encode()
         codings_path.write_bytes(original)
 
-        original_validator = migration._validate_version_two_store
+        original_validator = migration._validate_current_store
         calls = {"count": 0}
 
         def fail_after_replace(payload: dict) -> None:
@@ -288,7 +291,7 @@ def test_startup_migration_restores_verified_backup_after_post_replace_failure()
             if calls["count"] == 3:
                 raise ValueError("simulated post-replace validation failure")
 
-        migration._validate_version_two_store = fail_after_replace
+        migration._validate_current_store = fail_after_replace
         try:
             try:
                 migration.ensure_current_coding_schema(
@@ -302,7 +305,7 @@ def test_startup_migration_restores_verified_backup_after_post_replace_failure()
             else:
                 raise AssertionError("Expected simulated validation failure")
         finally:
-            migration._validate_version_two_store = original_validator
+            migration._validate_current_store = original_validator
 
         assert codings_path.read_bytes() == original
 
@@ -462,7 +465,8 @@ def test_version_two_store_with_legacy_keys_is_still_migrated() -> None:
         )
         assert result.status == "migrated"
         migrated = json.loads(codings_path.read_text())
-        assert migrated["schema_version"] == 2
+        assert migrated["schema_version"] == 3
+        assert result.applied_steps == ("v1_to_v2", "v2_to_v3")
         assert not any(
             OLD_COMPLEXITY in key
             for key in migrated["codings"][0]["field_spans"]

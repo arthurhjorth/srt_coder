@@ -34,7 +34,6 @@ from ui.components.transcript_view import render_transcript_segments
 
 FIELD_LABELS = {
     "thing_being_considered_extract": "Thing being considered",
-    "context_why_is_this_thing_being_considered_or_talked_about_extract": "Context",
     "why_is_it_important_extract": "Why considered or important",
     "why_is_it_important_to_take_different_perspectives_extract": "Why important to take different perspectives?",
     "perspectives_extract": "Different perspectives or dimensions (min. 2)",
@@ -42,11 +41,10 @@ FIELD_LABELS = {
     "why_is_it_relevant_to_take_this_perspective_extract": "Why is this perspective relevant?",
     "what_are_the_implications_extract": "What are the implications? (Does it e.g. add complexity?)",
     "outcome_something_that_can_happen_or_has_happened_event_something_that_can_be_or_is_the_case_state_extract": "Outcome / event / state",
-    "certitude_about_outcome_or_epistemic_modality_does_the_person_say_that_this_will_happen_or_could_it_happen_or_might_it_happen_extract": "Certitude / epistemic modality",
+    "uncertainty_about_causality_extract": "Uncertainty about causality",
     "epistemic_stance_extract": "Epistemic stance",
     "negation_or_not_extract": "Negation",
     "stance_does_the_person_want_this_or_does_the_person_not_want_this_extract": "Stance (wants / does not want)",
-    "condition_antecedent_reason_extract": "Condition / antecedent reason",
     "condition_antecedent_reason": "Condition antecedent reasons",
     "sufficiency_does_person_state_that_these_are_sufficient_conditions_extract": "Sufficiency of conditions",
     "description_an_event_or_state_that_contributes_or_contributed_towards_increasing_the_likelihood_of_the_outcome_or_towards_explaining_why_it_happened_extract": "Condition description",
@@ -59,6 +57,20 @@ FIELD_LABELS = {
     "adjective": "Adjective",
     "dimensions_or_examples": "Dimensions or examples",
 }
+
+DIFFERENTIATION_TOP_LEVEL_FIELDS = (
+    "thing_being_considered_extract",
+    "why_is_it_important_extract",
+    "why_is_it_important_to_take_different_perspectives_extract",
+)
+
+NUANCE_TOP_LEVEL_FIELDS = (
+    "outcome_something_that_can_happen_or_has_happened_event_something_that_can_be_or_is_the_case_state_extract",
+    "uncertainty_about_causality_extract",
+    "negation_or_not_extract",
+    "stance_does_the_person_want_this_or_does_the_person_not_want_this_extract",
+    "sufficiency_does_person_state_that_these_are_sufficient_conditions_extract",
+)
 
 
 def _display_name(field_name: str) -> str:
@@ -857,12 +869,7 @@ def render_analysis_page(analysis_id: str) -> None:
                 if not _is_compact():
                     ui.label(f"ID: {entry.coding_id}").classes("text-xs text-gray-500")
 
-                for field in [
-                    "thing_being_considered_extract",
-                    "context_why_is_this_thing_being_considered_or_talked_about_extract",
-                    "why_is_it_important_extract",
-                    "why_is_it_important_to_take_different_perspectives_extract",
-                ]:
+                for field in DIFFERENTIATION_TOP_LEVEL_FIELDS:
                     _render_text_field(field)
 
                 ui.separator()
@@ -1041,15 +1048,7 @@ def render_analysis_page(analysis_id: str) -> None:
                 if not _is_compact():
                     ui.label(f"ID: {entry.coding_id}").classes("text-xs text-gray-500")
 
-                for field in [
-                    "outcome_something_that_can_happen_or_has_happened_event_something_that_can_be_or_is_the_case_state_extract",
-                    "certitude_about_outcome_or_epistemic_modality_does_the_person_say_that_this_will_happen_or_could_it_happen_or_might_it_happen_extract",
-                    "epistemic_stance_extract",
-                    "negation_or_not_extract",
-                    "stance_does_the_person_want_this_or_does_the_person_not_want_this_extract",
-                    "condition_antecedent_reason_extract",
-                    "sufficiency_does_person_state_that_these_are_sufficient_conditions_extract",
-                ]:
+                for field in NUANCE_TOP_LEVEL_FIELDS:
                     _render_text_field(field)
 
                 ui.separator()

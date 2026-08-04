@@ -70,20 +70,14 @@ class Nuance(BaseModel):
     outcome_something_that_can_happen_or_has_happened_event_something_that_can_be_or_is_the_case_state_extract: Optional[str] = None
     outcome_something_that_can_happen_or_has_happened_event_something_that_can_be_or_is_the_case_state_extract_comment: Optional[str] = None
 
-    certitude_about_outcome_or_epistemic_modality_does_the_person_say_that_this_will_happen_or_could_it_happen_or_might_it_happen_extract: Optional[str] = None
-    certitude_about_outcome_or_epistemic_modality_does_the_person_say_that_this_will_happen_or_could_it_happen_or_might_it_happen_extract_comment: Optional[str] = None
-
-    epistemic_stance_extract: Optional[str] = None
-    epistemic_stance_extract_comment: Optional[str] = None
+    uncertainty_about_causality_extract: Optional[str] = None
+    uncertainty_about_causality_extract_comment: Optional[str] = None
 
     negation_or_not_extract: Optional[str] = None
     negation_or_not_extract_comment: Optional[str] = None
 
     stance_does_the_person_want_this_or_does_the_person_not_want_this_extract: Optional[str] = None
     stance_does_the_person_want_this_or_does_the_person_not_want_this_extract_comment: Optional[str] = None
-
-    condition_antecedent_reason_extract: Optional[str] = None
-    condition_antecedent_reason_extract_comment: Optional[str] = None
 
     condition_antecedent_reason: Optional[list[ConditionAntecedentReason]] = None
 

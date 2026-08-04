@@ -6,8 +6,20 @@ import re
 from itertools import combinations
 from typing import Any, Literal
 
-from models import Analysis, CodingEntry
 from domain.differentiation_migration import migrate_export_payload
+from models import Analysis, CodingEntry
+
+
+IGNORED_AGREEMENT_FIELD_PATHS = frozenset(
+    {
+        "differentiation.context_why_is_this_thing_being_considered_or_talked_about_extract",
+        "differentiation.context_why_is_this_thing_being_considered_or_talked_about_extract_comment",
+    }
+)
+
+
+def agreement_field_path_is_ignored(field_path: str) -> bool:
+    return normalize_field_path(str(field_path)) in IGNORED_AGREEMENT_FIELD_PATHS
 
 
 SpanMode = Literal["exact", "partial"]
@@ -171,6 +183,8 @@ def load_agreement_export(raw_text: str, *, source_name: str, source_index: int)
             continue
 
         for field_path, raw_spans in field_spans.items():
+            if agreement_field_path_is_ignored(str(field_path)):
+                continue
             if not isinstance(raw_spans, list):
                 warnings.append(f"Field {field_path} has invalid span data.")
                 continue
