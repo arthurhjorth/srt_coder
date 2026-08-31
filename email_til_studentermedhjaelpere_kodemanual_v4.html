@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ny forenklet kodemanual i SRT Coder</title>
+</head>
+<body style="font-family: Arial, Helvetica, sans-serif; color: #202124; line-height: 1.55; max-width: 760px; margin: 0; padding: 8px;">
+  <p><strong>Emne: SRT Coder er opdateret med en ny og enklere kodemanual</strong></p>
+
+  <p>Hej alle</p>
+
+  <p>Jeg har opdateret SRT Coder, så programmet nu bruger den nye, væsentligt forenklede kodemanual. Vi arbejder stadig med de tre hovedkoder <strong>Differentiation</strong>, <strong>Comparison</strong> og <strong>Nuance</strong>, men de mange hierarkiske underkoder er erstattet af færre og mere direkte felter.</p>
+
+  <p><strong>Differentiation</strong> består nu af:</p>
+  <ul>
+    <li><strong>Fokusemne / thing being considered:</strong> det fælles emne, som perspektiverne handler om.</li>
+    <li><strong>Perspektiver:</strong> de forskellige perspektiver på fokusemnet. En færdig kodning vil normalt have mindst to perspektiver.</li>
+    <li><strong>Perspektiv-type:</strong> en valgfri klassifikation som fx aktører/roller, hensyn, mål, vilkår, fortolkninger, konsekvenser eller handlemuligheder.</li>
+    <li><strong>Kodernote:</strong> en valgfri note til fx referencer, transskriptionsfejl eller afgrænsning.</li>
+  </ul>
+
+  <p><strong>Comparison</strong> består nu af:</p>
+  <ul>
+    <li><strong>Tekststykke:</strong> det mindste tekststykke, der indeholder sammenligningen.</li>
+    <li><strong>Ting A</strong> og <strong>Ting B:</strong> de to ting, der sammenlignes.</li>
+    <li><strong>Relation:</strong> den formulering, der placerer A i forhold til B.</li>
+    <li><strong>Sammenligningsgrundlag:</strong> en valgfri egenskab eller dimension, som sammenligningen bygger på.</li>
+    <li><strong>Kodernote:</strong> en valgfri note.</li>
+  </ul>
+
+  <p><strong>Nuance</strong> består nu af:</p>
+  <ul>
+    <li><strong>Relationstype:</strong> problemforklaring, forventet virkning eller ambition/intention.</li>
+    <li><strong>Påvirkning eller handling (X):</strong> årsagen, vilkåret, handlingen eller planen.</li>
+    <li><strong>Udfald eller mål (Y):</strong> den tilstand, ændring, virkning eller målsætning, som X forbindes med.</li>
+    <li><strong>X–Y-forbindelse:</strong> respondentens ord eller grammatiske konstruktion, der forbinder X og Y.</li>
+    <li><strong>Udtrykt sikkerhed:</strong> hævdet eller forbeholden. Feltet bruges ved problemforklaringer og forventede virkninger, men ikke ved ambition/intention.</li>
+    <li><strong>Afgrænsning:</strong> et valgfrit vilkår for, hvornår relationen gælder.</li>
+    <li><strong>Kodernote:</strong> en valgfri note.</li>
+  </ul>
+
+  <p>Programmet gemmer fortsat trinvis. I kan derfor oprette en kode og udfylde felterne ét ad gangen. Hvis en kodning endnu ikke ser komplet ud, viser programmet en vejledende besked, men den forhindrer ikke, at jeres arbejde bliver gemt.</p>
+
+  <p>Tekstfelterne udfyldes fortsat ved at markere den relevante tekst i transskriptionen og tilføje markeringen til det ønskede felt. De præcise tekstpositioner gemmes sammen med kodningen. Mellemrum i begyndelsen og slutningen af nye markeringer ignoreres automatisk, mens mellemrum inde i selve teksten bevares. Kodernoter skrives frit og indgår ikke i beregningen af koderoverensstemmelse.</p>
+
+  <p><strong>De gamle data bliver ikke migreret eller slettet.</strong> Den nye kodemanual er en selvstændig version, og nye kodninger gemmes i en separat fil. De tidligere kodninger bliver liggende uændret i den gamle datafil sammen med de sikkerhedskopier, vi allerede har lavet i forbindelse med tidligere migreringer. Den nye brugerflade viser dem ikke, men de er fortsat bevaret, så vi ikke risikerer at overskrive eller miste historiske kodninger.</p>
+
+  <p>Import, eksport og sammenligning af analyser bruger nu kun den nye version. En eksport fra den gamle kodemanual bliver derfor afvist med en fejlmeddelelse i stedet for at blive konverteret eller blandet sammen med de nye data. Det samme gælder sammenligningsværktøjet: det sammenligner kun eksporter fra den nye kodemanual.</p>
+
+  <p>I skal ikke gøre noget særligt for at tage den nye version i brug. Start programmet som normalt, opret eller åbn en analyse, og opret derefter en af de tre nye kodetyper. Kontakt mig, hvis I møder en fejl, er i tvivl om et felt, eller ser noget, der ikke passer med den opdaterede kodemanual. Send mig gerne den præcise fejlmeddelelse og navnet på analysen, men undlad selv at flytte eller ændre datafilerne.</p>
+
+  <p>Bedste hilsner<br>Arthur</p>
+</body>
+</html>
