@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from config import USERS_JSON
-from models import User
+from core_models import User
 from storage.fs_store import read_json, write_json
 
 
@@ -22,4 +22,3 @@ def get_user_by_username(username: str) -> Optional[User]:
 def save_users(users: list[User]) -> None:
     payload = {"users": [user.model_dump(mode="json") for user in users]}
     write_json(USERS_JSON, payload)
-

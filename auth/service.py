@@ -5,7 +5,7 @@ import hmac
 import os
 from typing import Optional
 
-from models import User
+from core_models import User
 from storage.users_repo import get_user_by_username
 
 

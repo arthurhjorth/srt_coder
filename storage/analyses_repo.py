@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from config import ANALYSES_JSON
-from models import Analysis
+from core_models import Analysis
 from storage.fs_store import read_json, write_json
 
 

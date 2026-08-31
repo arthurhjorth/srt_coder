@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import uuid
 
-from models import Analysis
+from core_models import Analysis
 from storage.analyses_repo import get_analysis_by_id, list_analyses, save_analyses
 
 

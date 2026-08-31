@@ -12,6 +12,8 @@ RUNTIME_DIR = BASE_DIR / ".runtime"
 USERS_JSON = CODED_DATA_DIR / "users.json"
 ANALYSES_JSON = CODED_DATA_DIR / "analyses.json"
 CODINGS_JSON = CODED_DATA_DIR / "codings.json"
+CODINGS_V4_JSON = CODED_DATA_DIR / "codings_v4.json"
+EXPORTS_V4_DIR = CODED_DATA_DIR / "exports_v4"
 
 APP_TITLE = "SRT Coder"
 APP_HOST = os.getenv("SRT_CODER_HOST", "127.0.0.1")
