@@ -2,7 +2,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from config import CODINGS_JSON, CODINGS_V4_JSON
+from config import CODINGS_JSON, CODINGS_V4_JSON, SIMPLIFIED_CODINGS_JSON
 
 
 def test_active_app_does_not_import_legacy_coding_modules() -> None:
@@ -21,6 +21,13 @@ legacy = [
     'ui.pages.agreement',
     'ui.pages.dashboard',
     'ui.pages.migration_review',
+    'domain.simplified_coding_service',
+    'domain.simplified_agreement_service',
+    'domain.simplified_analysis_exchange_service',
+    'storage.simplified_coding_repo',
+    'ui.pages.analysis_v4',
+    'ui.pages.agreement_v4',
+    'ui.pages.dashboard_v4',
 ]
 loaded = [name for name in legacy if name in sys.modules]
 if loaded:
@@ -36,6 +43,8 @@ if loaded:
     assert result.returncode == 0, result.stderr
 
 
-def test_v4_and_legacy_coding_stores_are_distinct_files() -> None:
+def test_v5_neutral_v4_and_legacy_coding_stores_are_distinct_files() -> None:
     assert CODINGS_V4_JSON != CODINGS_JSON
+    assert SIMPLIFIED_CODINGS_JSON not in {CODINGS_JSON, CODINGS_V4_JSON}
     assert CODINGS_V4_JSON.name == "codings_v4.json"
+    assert SIMPLIFIED_CODINGS_JSON.name == "codings_simplified.json"
