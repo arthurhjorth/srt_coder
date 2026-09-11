@@ -3,7 +3,7 @@
     {
       "username": "admin",
       "username_comment": null,
-      "password_hash": "pbkdf2_sha256$200000$dfcc10a2aaf8b5056e48219707695c6f$070a05044fc1f367546eec80ce77fb1040452d16c32100cd806736de8daabffb",
+      "password_hash": "pbkdf2_sha256$200000$bc1e6bb202e132ff564ba89898949ad1$1b0f9c92749e7876372882e29a6462d65d8243cd182c419b3e113282ab3d7194",
       "password_hash_comment": null,
       "role": "admin",
       "role_comment": null,
