@@ -5,10 +5,12 @@ is the user-facing introduction; `implementation.md` is a historical build plan
 whose checked and unchecked items do not always match the current code. When the
 documents disagree, the Python source and the notes below are authoritative.
 
-The active application uses the simplified coding book v4. The former
-hierarchical v3 implementation, its migration pipeline, and its review UI remain
-in the repository for preservation and audit purposes, but `app.py` does not
-import or register them. Sections that describe that code call it **legacy**.
+The active application uses the simplified coding book v5. The simplified v4
+and former hierarchical v3 implementations remain in the repository for
+preservation and audit purposes. V4 participates only as an input to the v5
+migration/import boundary; none of its pages or writable services are active.
+Sections that describe older implementations call them **preserved** or
+**legacy**.
 
 ## 1. What the application does
 
@@ -18,9 +20,10 @@ transcripts. Authenticated users can:
 1. upload or select an `.srt` transcript;
 2. create or open an analysis attached to that transcript;
 3. create flat, simplified `Differentiation`, `Comparison`, and `Nuance` coding
-   objects from coding book v4;
+   objects from coding book v5;
 4. select exact transcript ranges and assign them to schema fields;
-5. enter an optional coder note on each coding object;
+5. enter a separate comment on each coded transcript span plus dropdown comments
+   and a general coder note;
 6. export or import an analysis bundle; and
 7. compare exported analyses in a read-only agreement workspace.
 
@@ -45,7 +48,8 @@ storage/                Pydantic serialization and JSON repositories
         |
         v
 coded_data/*.json       mutable users and analyses
-coded_data/codings_v4.json  active simplified codings
+coded_data/codings_simplified.json  active simplified v5 codings
+coded_data/codings_v4.json          preserved v4 source
 
 interview_data/*.srt     mutable transcript inputs
 ```
@@ -54,14 +58,15 @@ The intended dependency direction is UI -> domain -> storage. Most active code
 follows it. The dashboard is one exception: uploaded SRT bytes are written
 directly to `interview_data/`.
 
-There are four active routes:
+There are five active routes:
 
 | Route | Renderer | Purpose |
 | --- | --- | --- |
 | `/login` | `auth.views.render_login_page` | Username/password login |
-| `/` | `ui.pages.dashboard_v4.render_dashboard` | Transcript, analysis, v4 import, and v4 export navigation |
-| `/analysis/{analysis_id}` | `ui.pages.analysis_v4.render_analysis_page` | Simplified v4 transcript coding workspace |
-| `/agreement` | `ui.pages.agreement_v4.render_agreement_page` | In-memory comparison of v4 exports |
+| `/` | `ui.pages.dashboard_v5.render_dashboard` | Transcript, analysis, v4/v5 import, and v5 export navigation |
+| `/analysis/{analysis_id}` | `ui.pages.analysis_v5.render_analysis_page` | Simplified v5 transcript coding workspace |
+| `/agreement` | `ui.pages.agreement_v5.render_agreement_page` | In-memory pairwise comparison of v4/v5 exports |
+| `/migration-review` | `ui.pages.migration_review_v5.render_migration_review_page` | Read-only historical and v4→v5 migration review |
 
 Every route except `/login` is authentication-gated. The dashboard is gated in
 both `app.py` and its renderer; the analysis and agreement pages gate themselves.
@@ -70,11 +75,11 @@ both `app.py` and its renderer; the analysis and agreement pages gate themselves
 
 ### `app.py`
 
-The entry point imports only the v4 dashboard, coding, and agreement pages and
-registers their routes. It does not run the legacy schema migration or register
-the migration-review page. Before startup it ensures the v4 export directory
-exists. The `__mp_main__` guard supports NiceGUI's reload/process startup
-behavior.
+The entry point imports only the v5 dashboard, coding, agreement, and migration
+review pages. Before NiceGUI starts, it runs the simplified v4→v5 schema check;
+any unsafe or invalid state aborts startup. It then ensures the neutral
+simplified export directory exists. The `__mp_main__` guard supports NiceGUI's
+reload/process startup behavior.
 
 ### `config.py`
 
@@ -83,9 +88,15 @@ All paths are relative to the repository root:
 - `interview_data/`: live SRT inputs;
 - `coded_data/`: live JSON stores;
 - `coded_data/codings.json`: preserved legacy v3 coding store;
-- `coded_data/codings_v4.json`: active simplified coding store;
+- `coded_data/codings_v4.json`: preserved v4 source store, never overwritten by v5 migration;
+- `coded_data/codings_simplified.json`: active neutral simplified store (currently book v5);
 - `coded_data/exports/`: preserved legacy exports; and
-- `coded_data/exports_v4/`: active v4 analysis bundles.
+- `coded_data/exports_v4/`: preserved v4 analysis bundles; and
+- `coded_data/exports_simplified/`: active v5 analysis bundles.
+
+`SRT_CODER_INTERVIEW_DATA_DIR`, `SRT_CODER_CODED_DATA_DIR`, and
+`SRT_CODER_RUNTIME_DIR` can point development/test runs at isolated data. The
+default paths remain inside the repository.
 
 `SRT_CODER_HOST`, `SRT_CODER_PORT`, and `SRT_CODER_STORAGE_SECRET` override the
 defaults. The default host is `127.0.0.1`, the default port is `8085`, and the
@@ -120,9 +131,42 @@ match the preserved versions in `models.py`, so existing `users.json` and
 PBKDF2 password hash, role, active flag, and timestamps. `Analysis` stores a
 generated ID, owner, transcript filename, name, description, and timestamps.
 
-### Simplified coding book v4
+### Simplified coding book v5
 
-`coding_books/simplified_v4/models.py` is the active coding contract. All manual
+`coding_books/simplified_v5/models.py` is the active coding contract. Every
+coding field remains optional so an object can be saved incrementally. Pydantic
+forbids unknown properties and strips outer whitespace whenever a model is
+validated.
+
+Differentiation contains a focus topic and a list of `Perspective` objects. Each
+perspective owns its text, selected perspective-type set, and type comment.
+Comparison retains passage, A, B, relation, and optional basis.
+Nuance retains relation type, X, Y, connection, expressed certainty, and
+limitation. Each saved transcript span owns its optional `comment`, so two spans
+assigned to the same text field can have different comments. Dropdowns retain
+adjacent `*_comment` fields because they have no transcript span. All three
+objects also retain the general `coder_note` without a comment on that note.
+Nuance relation type accepts only problem explanation and expected effect.
+
+Span comments are typed directly beside their coded excerpt and never require a
+second transcript selection. Span comments, dropdown comments, and coder notes
+are excluded from every agreement metric. Active span paths
+include, for example:
+
+```text
+differentiation.thing_being_considered
+differentiation.perspectives[0].text
+comparison.relation
+nuance.x_y_connection
+```
+
+`MigrationMetadata` retains old top-level perspective-type assignments and any
+associated legacy spans so their original meaning stays auditable after types
+are copied to individual perspectives.
+
+### Preserved simplified coding book v4
+
+`coding_books/simplified_v4/models.py` is the preserved predecessor contract. All manual
 fields are optional or have empty-list defaults so an object can be saved one
 field at a time. `CodingBookModel` uses `extra="forbid"` to prevent unknown
 fields from being silently discarded and `str_strip_whitespace=True` to remove
@@ -282,12 +326,13 @@ analyses, and 22 coding entries. Those counts are operational state, not fixture
 or invariants.
 
 - `coded_data/users.json` is tracked, contains password hashes, and is sensitive.
-- `coded_data/analyses.json`, preserved `coded_data/codings.json`, and active
-  `coded_data/codings_v4.json` are gitignored mutable state. The v4 repository
-  never opens the legacy coding file.
+- `coded_data/analyses.json`, preserved `coded_data/codings.json`, preserved
+  `coded_data/codings_v4.json`, and active `coded_data/codings_simplified.json`
+  are mutable state. The v5 repository opens only the neutral store.
 - `coded_data/exports/*.json` contains generated/sample bundles and can include
   transcript extracts and user records. The directory is currently untracked.
-- `coded_data/exports_v4/*.json` contains active v4 bundles.
+- `coded_data/exports_v4/*.json` contains preserved v4 bundles;
+  `coded_data/exports_simplified/*.json` contains active v5 bundles.
 - `interview_data/` is the live, gitignored transcript directory (72 local SRTs at
   documentation time).
 - `interview_data_all/` is an untracked second corpus (67 SRTs) that active code
@@ -299,7 +344,30 @@ or invariants.
 Transcript and export contents may contain research participant data. This guide
 documents their formats and roles, not their content.
 
-### Preserved legacy startup schema migration
+### Active simplified v4→v5 migration
+
+`domain/simplified_schema_migration.py` runs before the server. If a valid v5
+neutral store exists, it validates it and makes no change. If the neutral store
+is absent and `codings_v4.json` exists, it takes an exclusive migration lock and
+copies the exact original `analyses.json` and `codings_v4.json` into a timestamped
+folder under `coded_data/old_schema_analyses/`. Both copies must parse as JSON
+and match the live SHA-256 checksums before transformation starts.
+
+The pure transformation turns perspective strings into objects, copies each old
+top-level type to every perspective, creates a typed empty placeholder when
+necessary, rekeys perspective span paths, and stores unexpected type span paths
+in audit metadata. Each ambition/intention object becomes an expected-effect
+object without changing its ID, position, content, certainty, limitation, note,
+spans, or timestamps. New per-span and dropdown comments initialize to null.
+
+The complete result is validated and tested for idempotence in memory and in a
+temporary file. Only then is `codings_simplified.json` atomically created. The v4
+source and `analyses.json` are never overwritten. Failed post-publication checks
+remove the new neutral file; all other failures leave live files untouched and
+abort startup. The manifest records checksums, counts, affected IDs, span moves,
+type copies, and ambition recodes.
+
+### Preserved legacy v1→v3 startup schema migration
 
 `domain/differentiation_migration.py` is the preserved versioned coding-schema migration
 pipeline. It inspects the declared version and raw coding JSON before Pydantic
@@ -324,8 +392,9 @@ Manifests also record per-step populated value/comment counts, legacy span
 path/span counts, created nested conditions, completion time, and the
 post-migration coding-store checksum. `domain/migration_review_service.py` uses
 the immutable backup and pure migration functions to reconstruct the current
-expected state without writing anything. Neither module is imported or executed
-by the active v4 application. The files and all existing backups remain intact.
+expected state without writing anything. Neither legacy module is imported or
+executed by the active v5 application. The files and all existing backups remain
+intact and appear as read-only summaries on the v5 migration-review page.
 
 ## 8. Analysis and coding services
 
@@ -339,30 +408,34 @@ hex ID and UTC ISO timestamps; appends the record; and rewrites the store.
 The service does not verify that the owner exists or that the transcript exists.
 The dashboard supplies values that normally make both true.
 
-### `domain/simplified_coding_service.py`
+### `domain/simplified_coding_service_v5.py`
 
-This is the active v4 service. All list, update, and delete operations require an
+This is the active v5 service. All list, update, and delete operations require an
 analysis ID; file-aware listing also requires the transcript filename. Object
-creation accepts only the three book-v4 types and initializes the corresponding
+creation accepts only the three book-v5 types and initializes the corresponding
 empty discriminated payload. Updates validate the payload against the existing
 object's concrete type, prevent changing the type after creation, validate all
-spans, update the timestamp, and save through the separate v4 repository.
+spans, update the timestamp, and save through the neutral v5 repository.
+Perspective removal deletes all paths belonging to the removed row and shifts
+later perspective indexes down without touching unrelated paths.
 
 `domain/coding_service.py` remains the legacy hierarchical service and is not
-imported by `app.py` or any active v4 page.
+imported by `app.py` or any active v5 page. The v4 simplified service is likewise
+preserved but inactive.
 
 ## 9. Import and export
 
 ### Export
 
-`domain/simplified_analysis_exchange_service.export_analysis_to_file` finds one
-analysis, collects only v4 codings with its ID, and includes referenced users. It
-writes a timestamped, slugged JSON file under `coded_data/exports_v4/`:
+`domain/simplified_analysis_exchange_service_v5.export_analysis_to_file` finds
+one analysis, collects only v5 codings with its ID, and includes referenced
+users. It writes a timestamped, slugged JSON file under
+`coded_data/exports_simplified/`:
 
 ```json
 {
   "export_format_version": 1,
-  "coding_book_version": 4,
+  "coding_book_version": 5,
   "exported_at": "UTC ISO timestamp",
   "analyses": [],
   "codings": [],
@@ -375,9 +448,9 @@ handled as sensitive data. Legacy v1-v3 data is never included.
 
 ### Import
 
-The v4 importer requires both exact version fields before it reads any local
-store. It rejects legacy exports without modifying the upload or local data. It
-then:
+The v5 importer accepts exact v5 bundles and converts simplified v4 bundles in
+memory. It never changes the uploaded file and rejects hierarchical v3, malformed,
+or future bundles before reading any local store. It then:
 
 1. adds missing users by case-insensitive username;
 2. skips analyses whose transcript filename is not locally available;
@@ -392,16 +465,16 @@ Consequently, codings belonging to a skipped existing analysis are skipped rathe
 than merged into that existing analysis. The three stores are saved sequentially,
 without a transaction; a later save failure can leave a partial import.
 
-`domain/analysis_exchange_service.py` is the preserved legacy exporter/importer
-with migration support and is not imported by the active app.
+`domain/analysis_exchange_service.py` and the v4 simplified exchange service are
+preserved and are not imported by the active app.
 
 ## 10. Dashboard UI
 
-`ui/pages/dashboard_v4.py` renders one card per live SRT and shows all analyses for
+`ui/pages/dashboard_v5.py` renders one card per live SRT and shows all analyses for
 that file. Any authenticated user can open or export any listed analysis. New
 analysis dialogs use the signed-in username as owner. The page identifies coding
-book v4, exports only v4 codings, accepts only v4 imports, and no longer links to
-the legacy migration-review route.
+book v5, exports v5 codings, accepts v4/v5 imports, and links to the v5 agreement
+and migration-review routes.
 
 The SRT uploader accepts multiple files, strips directory components from upload
 names, enforces the `.srt` suffix, rejects case-insensitive duplicate names, and
@@ -416,24 +489,34 @@ panel backed by session state. The current dashboard does not import it.
 
 ## 11. Analysis workspace UI
 
-### Active v4 workspace
+### Active v5 workspace
 
-`ui/pages/analysis_v4.py` owns the active interactive coding workspace. It reads
-and writes only `SimplifiedCodingEntry` records through the v4 service. The left
+`ui/pages/analysis_v5.py` owns the active interactive coding workspace. It reads
+and writes only v5 `SimplifiedCodingEntry` records through the v5 service. The left
 third shows the transcript; the right two thirds show flat coding cards and the
 three create buttons.
 
-Differentiation starts with two visible perspective rows without making the
-Pydantic list required. Users can add more rows and choose multiple perspective
-types. Comparison shows the six flat manual fields. Nuance shows the relation
-enum, X, Y, connection, limitation, and coder note; certainty is shown only for
-problem explanation and expected effect.
+Differentiation starts with two visible perspective subcards without making the
+Pydantic list required. Each saved perspective owns its text and types and can be
+removed with safe span reindexing. Comparison and Nuance show their flat manual
+fields, per-span comments, dropdown comments, and coder note.
+Ambition/intention is absent.
 
 Transcript-derived text fields are locked to span selection. The page captures a
 DOM selection on mouse-down, normalizes it against the transcript, appends the
 canonical selected text and exact offsets, clears the browser selection cache,
-then persists and re-renders. Span deletion rebuilds the field from the remaining
-span texts. Coder notes save on blur and receive no transcript span.
+then persists and re-renders only the affected object. Span deletion rebuilds a
+primary field from the remaining span texts. Every saved span renders its own
+typed comment box directly below the excerpt; it does not require or accept a
+second transcript selection. Coder notes save on blur and receive no transcript
+span. Scalar/comment saves do not rerender the card, so a pending delete click is
+not destroyed by a blur handler.
+
+Each parent object is an expansion panel. Open/closed state survives local card
+rerenders and the page includes collapse-all and expand-all actions. The delete
+button lives in the panel header and stops expansion event propagation; one click
+opens confirmation even when a comment currently has focus. Confirmed deletion
+reloads storage, the visible count, cards, and transcript highlights.
 
 Completeness warnings come from the coding-book validation module. They are UI
 guidance only and never block incremental saves. Leading/trailing whitespace is
@@ -533,17 +616,22 @@ is the unused earlier dashboard panel. `ui/pages/coder.py` and
 
 ## 12. Agreement domain
 
-### Active v4 agreement service
+### Active v5 agreement service
 
-`domain/simplified_agreement_service.py` is UI-independent and accepts only
-in-memory export text with `export_format_version: 1` and
-`coding_book_version: 4`. It rejects older books without transforming them.
-Every v4 `field_spans` item becomes a normalized annotation. Match rules support
-exact/partial span overlap, exact/normalized/ignored field paths, and optional
-same-code-type enforcement. Matching annotations are unioned into clusters and
-each source pair receives greedy one-to-one TP/FP/FN, precision, recall, and F1
-metrics. Categorical enum values and coder notes have no spans and therefore do
-not affect these metrics.
+`domain/simplified_agreement_service_v5.py` is UI-independent and accepts v5
+exports plus in-memory-migrated v4 exports. Every primary `field_spans` item
+becomes a normalized annotation; all `*_comment` paths and coder notes are
+excluded before matching. Match rules support exact/partial span overlap,
+exact/normalized/ignored field paths, and optional same-code-type enforcement.
+
+Each source pair uses deterministic maximum-cardinality one-to-one span matching,
+then total overlap quality and stable ordering as tie-breakers. It reports
+TP/FP/FN, precision, recall, and F1. Coding objects are themselves aligned by
+matched primary spans. Relation type, expressed certainty, and per-perspective
+type sets receive a separate categorical agreement score only inside aligned
+objects/perspectives; pairs where both values are missing are excluded. JSON and
+UTF-8 CSV serializers expose rules, source metadata, alignment, metrics, and
+discrepancies.
 
 ### Preserved legacy agreement service
 
@@ -601,12 +689,18 @@ spans should not be interpreted as a precise character-level ratio.
 
 ## 13. Agreement UI
 
-`ui/pages/agreement_v4.py` keeps uploaded v4 exports in page-local memory and
-renders rule controls, source summaries, pairwise span metrics, side-by-side flat
-coding objects, and transcript-span clusters. Green schema fields have a matching
-span under the selected rules; amber fields do not. Enum values and coder notes
-remain visible, with coder notes explicitly excluded from span agreement. Reload
-or source removal discards only the in-memory comparison.
+`ui/pages/agreement_v5.py` reserves a source index before each asynchronous file
+read, preserving selection order. It hashes uploads to reject duplicate content
+and shows per-file errors, Remove, and Clear controls. More than two uploads
+produce all pairwise summaries and a selectable detailed pair.
+
+The detailed view places aligned coding objects side by side. Field colors use
+the concrete source, coding ID, path, and actual matched annotation; categorical
+dropdowns use their separate categorical result. Comments and coder notes are
+always neutral. Focused transcript evidence uses the local SRT where available
+and exported text/coordinates otherwise. Separate discrepancy sections list
+unmatched objects, unmatched spans, and differing categorical values. The old
+Mermaid, Sankey, and graph-heavy views remain only in preserved pages.
 
 `ui/pages/agreement.py` is the preserved legacy visualization and is not imported
 by the active app. It keeps uploaded exports in a page-local Python list. Clear
@@ -636,8 +730,10 @@ node/link count subject to large caps.
 
 ## 14. Migration review UI
 
-`ui/pages/migration_review.py` lists valid timestamped backup directories and
-renders a read-only three-state comparison for both migration generations:
+`ui/pages/migration_review_v5.py` and
+`domain/simplified_migration_review_service_v5.py` list both the new simplified
+v4→v5 backups and historical v1–v3 manifests. For v4→v5 they render a read-only
+three-state comparison:
 retained content before migration, content moved from retiring fields, and the
 deterministic expected result. It also compares expected values and span ordering
 with the current live coding by ID.
@@ -649,12 +745,28 @@ checksum to distinguish an unchanged migrated store, a later schema upgrade, and
 later edits. For older or transitional manifests without an explicit step list,
 the review infers the step from the backed-up schema and raw retiring keys without
 modifying the manifest. It never modifies backup or live data and is
-authentication-gated in its legacy implementation. The active v4 `app.py` does
-not register its route.
+authentication-gated. Historical hierarchical manifests remain readable as
+summaries without reactivating their coding interface.
 
 ## 15. Tests
 
-The active v4 test files cover:
+The active v5 test files cover:
+
+- optional fields, nested perspective types, per-span/dropdown comments, whitespace, and
+  ambition/intention rejection (`tests/test_simplified_v5_models.py`);
+- strict neutral-store CRUD, object and perspective deletion, and span reindexing
+  (`tests/test_simplified_v5_storage.py`);
+- v4→v5 transformation, exact backups, checksums, lock contention, idempotence,
+  failure cleanup, future/inconsistent versions, and manifests
+  (`tests/test_simplified_v5_migration.py`);
+- in-memory v4 imports and v5 exports (`tests/test_simplified_v5_exchange.py`);
+- maximum-cardinality matching, object-specific status keys, categorical
+  agreement, comment exclusion, and downloads
+  (`tests/test_simplified_v5_agreement.py`); and
+- migration-review reconstruction and later-edit detection
+  (`tests/test_simplified_v5_migration_review.py`).
+
+The preserved v4 test files still cover:
 
 - optional flat Pydantic fields, enum validation, whitespace normalization, and
   non-blocking completion guidance (`tests/test_simplified_v4_models.py`);
@@ -696,14 +808,14 @@ assume those artifacts should be committed or deleted.
 
 The most important source-of-truth notes are:
 
-- `core_models.py` and `coding_books/simplified_v4/models.py` define the active
-  contracts; `models.py` defines the preserved legacy coding book;
+- `core_models.py` and `coding_books/simplified_v5/models.py` define the active
+  contracts; v4 and `models.py` define preserved coding books;
 - the active app never reads or writes `coded_data/codings.json`, runs no legacy
-  startup migration, and exposes no migration-review route;
+  v1→v3 migration, and exposes a read-only v5 migration-review route;
 - old coded data, old migration code, and old UI modules remain present for
-  retention and audit purposes but are not wired into the v4 application;
-- v4 export/import and agreement accept coding book 4 only and perform no
-  conversion from earlier books;
+  retention and audit purposes but are not wired into the v5 application;
+- v5 export writes only book 5; import and agreement accept v5 and convert
+  simplified v4 in memory, while hierarchical v3 and future books are rejected;
 - ordinary save operations still lack locking;
 - the README advertises `Stop.command`, which is absent; and
 - `implementation.md` is useful history, not a reliable completion checklist.
@@ -714,19 +826,19 @@ When changing the active codebase, use these boundaries:
 
 - shared user/analysis shape: update `core_models.py` and all active repositories
   and services that consume it;
-- v4 coding shape or persisted record: update
-  `coding_books/simplified_v4/models.py`, its labels/completion guidance, v4
+- v5 coding shape or persisted record: update
+  `coding_books/simplified_v5/models.py`, its labels/completion guidance, v5
   import/export behavior, current analysis-card rendering, agreement
   normalization/rendering, and tests;
 - transcript format: update `parsing/srt_parser.py`, parser tests, and any span
   assumptions in analysis/agreement helpers;
-- v4 storage format: update `storage/simplified_coding_repo.py` and its strict
-  envelope version checks; do not repurpose the legacy store;
+- neutral v5 storage format: update `storage/simplified_coding_repo_v5.py` and its
+  strict envelope checks; do not overwrite either older store;
 - active coding behavior: implement rules in
-  `domain/simplified_coding_service.py`, then invoke them from
-  `ui/pages/analysis_v4.py`;
-- active agreement definition: change `domain/simplified_agreement_service.py`;
-  keep visualization-only transformations in `ui/pages/agreement_v4.py`;
+  `domain/simplified_coding_service_v5.py`, then invoke them from
+  `ui/pages/analysis_v5.py`;
+- active agreement definition: change `domain/simplified_agreement_service_v5.py`;
+  keep rendering-only transformations in `ui/pages/agreement_v5.py`;
 - route or authentication behavior: update `app.py` plus the page-level guard and
   add authorization tests;
 - distribution: keep launchers, README instructions, dependencies, and release
