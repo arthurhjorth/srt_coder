@@ -619,15 +619,17 @@ is the unused earlier dashboard panel. `ui/pages/coder.py` and
 ### Active v5 agreement service
 
 `domain/simplified_agreement_service_v5.py` is UI-independent and accepts v5
-exports plus in-memory-migrated v4 exports. Every primary `field_spans` item
+exports plus in-memory-migrated v4 exports. Every agreement-eligible `field_spans` item
 becomes a normalized annotation; all `*_comment` paths and coder notes are
 excluded before matching. Match rules support exact/partial span overlap,
 exact/normalized/ignored field paths, and optional same-code-type enforcement.
 
 Each source pair uses deterministic maximum-cardinality one-to-one span matching,
 then total overlap quality and stable ordering as tie-breakers. It reports
-TP/FP/FN, precision, recall, and F1. Coding objects are themselves aligned by
-matched primary spans. Relation type, expressed certainty, and per-perspective
+TP/FP/FN, precision, recall, and F1. Coding objects of the same parent type are
+aligned by any overlapping coded span; the alignment then records separately
+whether their designated primary fields overlap. Relation type, expressed
+certainty, and per-perspective
 type sets receive a separate categorical agreement score only inside aligned
 objects/perspectives; pairs where both values are missing are excluded. JSON and
 UTF-8 CSV serializers expose rules, source metadata, alignment, metrics, and
@@ -694,13 +696,26 @@ read, preserving selection order. It hashes uploads to reject duplicate content
 and shows per-file errors, Remove, and Clear controls. More than two uploads
 produce all pairwise summaries and a selectable detailed pair.
 
-The detailed view places aligned coding objects side by side. Field colors use
-the concrete source, coding ID, path, and actual matched annotation; categorical
-dropdowns use their separate categorical result. Comments and coder notes are
-always neutral. Focused transcript evidence uses the local SRT where available
-and exported text/coordinates otherwise. Separate discrepancy sections list
-unmatched objects, unmatched spans, and differing categorical values. The old
-Mermaid, Sankey, and graph-heavy views remain only in preserved pages.
+For the selected source pair, an object-level table reports how many
+Differentiation, Comparison, and Nuance objects each coder identified. It splits
+one-to-one object overlaps into primary-field overlaps and partial-only overlaps,
+and reports each coder's remaining no-overlap count. Object pairing uses any
+overlapping coded span; primary fields are the Differentiation focus topic,
+Comparison Thing A/Thing B, and Nuance outcome Y.
+
+Above the table, every uploaded filename receives a stable display letter in
+current source order (`A`, `B`, `C`, and so on), and the selected pair is stated
+explicitly. Table columns and detail cards reuse those letters.
+
+The detailed view combines aligned and no-overlap objects in one stream. It can
+group first by parent code and then transcript position, or interleave all three
+codes strictly by transcript position. Aligned objects appear side by side;
+unmatched objects use the same full card renderer in a single-coder card. Field
+colors use the concrete source, coding ID, path, and actual matched annotation;
+categorical dropdowns use their separate categorical result. Comments and coder
+notes are always neutral. Focused transcript evidence uses the local SRT where
+available and exported text/coordinates otherwise. The old Mermaid, Sankey, and
+graph-heavy views remain only in preserved pages.
 
 `ui/pages/agreement.py` is the preserved legacy visualization and is not imported
 by the active app. It keeps uploaded exports in a page-local Python list. Clear
@@ -760,8 +775,9 @@ The active v5 test files cover:
   failure cleanup, future/inconsistent versions, and manifests
   (`tests/test_simplified_v5_migration.py`);
 - in-memory v4 imports and v5 exports (`tests/test_simplified_v5_exchange.py`);
-- maximum-cardinality matching, object-specific status keys, categorical
-  agreement, comment exclusion, and downloads
+- maximum-cardinality matching, parent-code summaries, primary/partial/no-overlap
+  classification, transcript-ordered review items, object-specific status keys,
+  categorical agreement, comment exclusion, and downloads
   (`tests/test_simplified_v5_agreement.py`); and
 - migration-review reconstruction and later-edit detection
   (`tests/test_simplified_v5_migration_review.py`).

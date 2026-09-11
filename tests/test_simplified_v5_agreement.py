@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 
 from coding_books.simplified_v5.models import (
+    ComparisonCoding,
+    ComparisonFields,
     DifferentiationCoding,
     DifferentiationFields,
     NuanceCoding,
@@ -217,6 +219,127 @@ def test_categorical_agreement_is_separate_for_aligned_objects() -> None:
     assert pair.categorical_agreement == 0.0
 
 
+def test_parent_code_summary_and_review_items_cover_every_object_once() -> None:
+    left = _source(
+        [
+            _entry(
+                "left-diff",
+                DifferentiationCoding(
+                    fields=DifferentiationFields(thing_being_considered="focus")
+                ),
+                {
+                    "differentiation.thing_being_considered": [
+                        _span(0, 8, segment="seg-00001")
+                    ]
+                },
+            ),
+            _entry(
+                "left-comparison-primary",
+                ComparisonCoding(fields=ComparisonFields(thing_a="first thing")),
+                {"comparison.thing_a": [_span(0, 8, segment="seg-00002")]},
+            ),
+            _entry(
+                "left-nuance-only",
+                NuanceCoding(fields=NuanceFields(outcome_or_goal_y="left outcome")),
+                {"nuance.outcome_or_goal_y": [_span(0, 8, segment="seg-00003")]},
+            ),
+            _entry(
+                "left-comparison-partial",
+                ComparisonCoding(fields=ComparisonFields(relation="more than")),
+                {"comparison.relation": [_span(0, 8, segment="seg-00004")]},
+            ),
+        ],
+        "left",
+        0,
+    )
+    right = _source(
+        [
+            _entry(
+                "right-diff",
+                DifferentiationCoding(
+                    fields=DifferentiationFields(thing_being_considered="same focus")
+                ),
+                {
+                    "differentiation.thing_being_considered": [
+                        _span(3, 10, segment="seg-00001")
+                    ]
+                },
+            ),
+            _entry(
+                "right-comparison-primary",
+                ComparisonCoding(fields=ComparisonFields(thing_b="first thing")),
+                {"comparison.thing_b": [_span(2, 9, segment="seg-00002")]},
+            ),
+            _entry(
+                "right-comparison-partial",
+                ComparisonCoding(fields=ComparisonFields(comparison_basis="degree")),
+                {"comparison.comparison_basis": [_span(2, 6, segment="seg-00004")]},
+            ),
+            _entry(
+                "right-nuance-only",
+                NuanceCoding(fields=NuanceFields(outcome_or_goal_y="right outcome")),
+                {"nuance.outcome_or_goal_y": [_span(0, 8, segment="seg-00009")]},
+            ),
+        ],
+        "right",
+        1,
+    )
+
+    pair = build_agreement_report([left, right]).pair_agreements[0]
+    summaries = {item.object_type: item for item in pair.parent_code_summaries}
+
+    differentiation = summaries["differentiation"]
+    assert differentiation.left_identified == 1
+    assert differentiation.right_identified == 1
+    assert differentiation.overlap == 1
+    assert differentiation.primary_field_overlap == 1
+    assert differentiation.partial_only == 0
+    assert differentiation.no_overlap_left == 0
+    assert differentiation.no_overlap_right == 0
+
+    comparison = summaries["comparison"]
+    assert comparison.left_identified == 2
+    assert comparison.right_identified == 2
+    assert comparison.overlap == 2
+    assert comparison.primary_field_overlap == 1
+    assert comparison.partial_only == 1
+    assert comparison.no_overlap_left == 0
+    assert comparison.no_overlap_right == 0
+
+    nuance = summaries["nuance"]
+    assert nuance.left_identified == 1
+    assert nuance.right_identified == 1
+    assert nuance.overlap == 0
+    assert nuance.primary_field_overlap == 0
+    assert nuance.partial_only == 0
+    assert nuance.no_overlap_left == 1
+    assert nuance.no_overlap_right == 1
+
+    for summary in pair.parent_code_summaries:
+        assert summary.overlap == summary.primary_field_overlap + summary.partial_only
+        assert summary.left_identified == summary.overlap + summary.no_overlap_left
+        assert summary.right_identified == summary.overlap + summary.no_overlap_right
+
+    assert [item.start_segment_id for item in pair.object_review_items] == [
+        "seg-00001",
+        "seg-00002",
+        "seg-00003",
+        "seg-00004",
+        "seg-00009",
+    ]
+    assert [item.agreement_status for item in pair.object_review_items] == [
+        "primary_field_overlap",
+        "primary_field_overlap",
+        "no_overlap",
+        "partial_only",
+        "no_overlap",
+    ]
+    assert pair.object_review_items[2].left_coding_id == "left-nuance-only"
+    assert pair.object_review_items[2].right_coding_id is None
+    assert pair.object_review_items[4].left_coding_id is None
+    assert pair.object_review_items[4].right_coding_id == "right-nuance-only"
+
+
 def test_report_downloads_contain_pairwise_results() -> None:
     left = _source(
         [_entry("left", NuanceCoding(), {"nuance.x_y_connection": [_span(0, 2)]})],
@@ -231,9 +354,23 @@ def test_report_downloads_contain_pairwise_results() -> None:
     report = build_agreement_report([left, right], AgreementRules(span_mode="exact"))
     payload = json.loads(report_as_json(report))
     assert payload["pairs"][0]["true_positives"] == 1
+    assert payload["pairs"][0]["parent_code_summaries"][2] == {
+        "object_type": "nuance",
+        "left_identified": 1,
+        "right_identified": 1,
+        "overlap": 1,
+        "primary_field_overlap": 0,
+        "partial_only": 1,
+        "no_overlap_left": 0,
+        "no_overlap_right": 0,
+    }
+    assert payload["pairs"][0]["object_review_items"][0]["agreement_status"] == (
+        "partial_only"
+    )
     csv_text = report_as_csv(report)
     assert csv_text.startswith("\ufeffleft_source,right_source")
     assert "1.000000" in csv_text
+    assert "nuance_primary_field_overlap" in csv_text
 
 
 def test_v4_agreement_upload_is_migrated_in_memory() -> None:

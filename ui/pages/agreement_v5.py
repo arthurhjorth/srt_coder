@@ -20,6 +20,8 @@ from domain.simplified_agreement_service_v5 import (
     AgreementRules,
     AgreementSource,
     NormalizedAnnotation,
+    ObjectReviewItem,
+    PARENT_CODE_ORDER,
     PairAgreement,
     build_agreement_report,
     load_agreement_export,
@@ -32,6 +34,15 @@ from domain.transcript_service import load_transcript
 
 def _percent(value: float | None) -> str:
     return "—" if value is None else f"{value * 100:.1f}%"
+
+
+def _source_letter(position: int) -> str:
+    value = position + 1
+    label = ""
+    while value:
+        value, remainder = divmod(value - 1, 26)
+        label = chr(ord("A") + remainder) + label
+    return label
 
 
 def _short(value: Any) -> str:
@@ -149,6 +160,7 @@ def render_agreement_page() -> None:
             "rules": AgreementRules(),
             "report": None,
             "selected_pair": None,
+            "detail_order": "grouped",
         }
         status = ui.label("").classes("text-sm text-red-700 whitespace-pre-wrap")
         source_container = ui.column().classes("w-full gap-2")
@@ -161,36 +173,46 @@ def render_agreement_page() -> None:
                 "validated independently, and never modified. Duplicate content is rejected."
             ).classes("text-xs text-gray-600")
 
-            async def on_upload(event) -> None:
-                reserved_index = state["next_index"]
-                state["next_index"] += 1
-                filename = str(getattr(event.file, "name", "") or f"source-{reserved_index + 1}.json")
-                try:
-                    content = await event.file.read()
-                    if isinstance(content, str):
-                        raw_bytes = content.encode("utf-8")
-                    else:
-                        raw_bytes = bytes(content)
-                    digest = hashlib.sha256(raw_bytes).hexdigest()
-                    if any(source.content_hash == digest for source in state["sources"]):
-                        raise ValueError("duplicate of an already selected export")
-                    source = load_agreement_export(
-                        raw_bytes.decode("utf-8-sig"),
-                        source_name=filename,
-                        source_index=reserved_index,
-                        content_hash=digest,
+            async def on_multi_upload(event) -> None:
+                reserved_files = []
+                for file in event.files:
+                    reserved_index = state["next_index"]
+                    state["next_index"] += 1
+                    filename = str(
+                        getattr(file, "name", "")
+                        or f"source-{reserved_index + 1}.json"
                     )
-                    state["sources"].append(source)
-                    state["sources"].sort(key=lambda item: item.source_index)
-                except Exception as exc:
-                    state["errors"].append((reserved_index, filename, str(exc)))
-                    state["errors"].sort()
+                    reserved_files.append((reserved_index, filename, file))
+                for reserved_index, filename, file in reserved_files:
+                    try:
+                        content = await file.read()
+                        if isinstance(content, str):
+                            raw_bytes = content.encode("utf-8")
+                        else:
+                            raw_bytes = bytes(content)
+                        digest = hashlib.sha256(raw_bytes).hexdigest()
+                        if any(
+                            source.content_hash == digest
+                            for source in state["sources"]
+                        ):
+                            raise ValueError("duplicate of an already selected export")
+                        source = load_agreement_export(
+                            raw_bytes.decode("utf-8-sig"),
+                            source_name=filename,
+                            source_index=reserved_index,
+                            content_hash=digest,
+                        )
+                        state["sources"].append(source)
+                        state["sources"].sort(key=lambda item: item.source_index)
+                    except Exception as exc:
+                        state["errors"].append((reserved_index, filename, str(exc)))
+                        state["errors"].sort()
                 _rebuild_report()
 
             ui.upload(
                 label="Drop two or more v4/v5 analysis exports",
                 multiple=True,
-                on_upload=on_upload,
+                on_multi_upload=on_multi_upload,
                 auto_upload=True,
             ).props('accept=".json"')
 
@@ -256,7 +278,8 @@ def render_agreement_page() -> None:
                                 f"{source.source_index + 1}. {source.source_name} · {source.label}"
                             ).classes("text-sm font-medium")
                             ui.label(
-                                f"{len(source.codings)} objects · {len(source.annotations)} primary spans"
+                                f"{len(source.codings)} objects · "
+                                f"{len(source.annotations)} coded spans"
                             ).classes("text-xs text-gray-600")
                         ui.button(
                             "Remove",
@@ -395,37 +418,247 @@ def render_agreement_page() -> None:
                             )
                             ui.label(span.comment).classes("text-xs whitespace-pre-wrap")
 
+        def _render_parent_code_summary(
+            report: AgreementReport,
+            pair: PairAgreement,
+        ) -> None:
+            source_letters = {
+                source.source_index: _source_letter(position)
+                for position, source in enumerate(report.sources)
+            }
+            left_letter = source_letters[pair.left_source_index]
+            right_letter = source_letters[pair.right_source_index]
+            ui.label("Uploaded files").classes("text-sm font-semibold mt-2")
+            with ui.row().classes("w-full gap-2 flex-wrap"):
+                for source in report.sources:
+                    letter = source_letters[source.source_index]
+                    with ui.element("div").classes(
+                        "rounded border border-slate-300 bg-slate-50 px-3 py-1"
+                    ):
+                        ui.label(f"{letter}: {source.source_name}").classes("text-sm")
+            ui.label(
+                f"Selected comparison: {left_letter} ↔ {right_letter}"
+            ).classes("text-xs text-gray-600")
+            ui.label("Object-level agreement overview").classes("text-lg font-semibold mt-2")
+            ui.label(
+                "Primary fields: Differentiation — Thing being considered; "
+                "Comparison — Thing A and Thing B; Nuance — Outcome or goal (Y)."
+            ).classes("text-sm text-gray-700")
+            ui.label(
+                "Overlap is the total number of one-to-one object pairs and equals "
+                "PF overlap plus Partial only. PF overlap means the primary fields "
+                "overlap. Partial only means another field overlaps but the primary "
+                "fields do not. No overlap lists the unpaired objects for each coder."
+            ).classes("text-sm text-gray-700")
+            rows = [
+                {
+                    "parent_code": CODE_TYPE_LABELS[summary.object_type],
+                    "left_identified": summary.left_identified,
+                    "right_identified": summary.right_identified,
+                    "overlap": summary.overlap,
+                    "primary": summary.primary_field_overlap,
+                    "partial": summary.partial_only,
+                    "none": (
+                        f"{left_letter}: {summary.no_overlap_left} · "
+                        f"{right_letter}: {summary.no_overlap_right}"
+                    ),
+                }
+                for summary in pair.parent_code_summaries
+            ]
+            columns = [
+                {
+                    "name": "parent_code",
+                    "label": "Parent code",
+                    "field": "parent_code",
+                    "align": "left",
+                },
+                {
+                    "name": "left_identified",
+                    "label": f"Coder {left_letter} identified",
+                    "field": "left_identified",
+                    "align": "right",
+                },
+                {
+                    "name": "right_identified",
+                    "label": f"Coder {right_letter} identified",
+                    "field": "right_identified",
+                    "align": "right",
+                },
+                {
+                    "name": "overlap",
+                    "label": "Overlap",
+                    "field": "overlap",
+                    "align": "right",
+                },
+                {
+                    "name": "primary",
+                    "label": "PF overlap",
+                    "field": "primary",
+                    "align": "right",
+                },
+                {
+                    "name": "partial",
+                    "label": "Partial only",
+                    "field": "partial",
+                    "align": "right",
+                },
+                {
+                    "name": "none",
+                    "label": "No overlap",
+                    "field": "none",
+                    "align": "right",
+                },
+            ]
+            ui.table(columns=columns, rows=rows, row_key="parent_code").classes(
+                "w-full"
+            ).props("flat bordered dense hide-bottom")
+
         def _render_pair_detail(report: AgreementReport, pair: PairAgreement) -> None:
             sources = {source.source_index: source for source in report.sources}
             left = sources[pair.left_source_index]
             right = sources[pair.right_source_index]
+            source_letters = {
+                source.source_index: _source_letter(position)
+                for position, source in enumerate(report.sources)
+            }
+            left_letter = source_letters[pair.left_source_index]
+            right_letter = source_letters[pair.right_source_index]
             left_entries = {entry.coding_id: entry for entry in left.codings}
             right_entries = {entry.coding_id: entry for entry in right.codings}
+            position_cache: dict[tuple[str, str | None, int | None], str] = {}
 
-            ui.label("Aligned coding objects").classes("text-lg font-semibold")
-            if not pair.object_alignments:
-                ui.label("No objects could be aligned by their primary spans.").classes(
-                    "text-sm text-gray-600"
+            def position_label(item: ObjectReviewItem) -> str:
+                key = (
+                    item.interview_file,
+                    item.start_segment_id,
+                    item.start_char_offset,
                 )
-            for alignment in pair.object_alignments:
-                with ui.expansion(
-                    f"{alignment.object_type} · {alignment.matched_span_count} matched spans",
-                    value=True,
-                ).classes("w-full border rounded bg-white"):
-                    with ui.row().classes("w-full items-start no-wrap gap-3"):
-                        with ui.column().classes("w-1/2 gap-1"):
-                            ui.label(pair.left_label).classes("text-xs font-semibold")
-                            _render_entry(
-                                left, left_entries[alignment.left_coding_id], pair
-                            )
-                        with ui.column().classes("w-1/2 gap-1"):
-                            ui.label(pair.right_label).classes("text-xs font-semibold")
-                            _render_entry(
-                                right, right_entries[alignment.right_coding_id], pair
-                            )
+                if key in position_cache:
+                    return position_cache[key]
+                if item.start_segment_id is None:
+                    label = "Position unavailable"
+                else:
+                    label = f"{item.start_segment_id}:{item.start_char_offset or 0}"
+                    try:
+                        transcript = load_transcript(item.interview_file)
+                        segment = next(
+                            segment
+                            for segment in transcript.segments
+                            if segment.segment_id == item.start_segment_id
+                        )
+                        total_seconds = segment.start_ms // 1000
+                        hours, remainder = divmod(total_seconds, 3600)
+                        minutes, seconds = divmod(remainder, 60)
+                        label = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                    except Exception:
+                        pass
+                position_cache[key] = label
+                return label
 
-            with ui.expansion("Focused transcript evidence", value=True).classes(
-                "w-full border rounded bg-white"
+            status_labels = {
+                "primary_field_overlap": "PF overlap",
+                "partial_only": "Partial only",
+                "no_overlap": "No overlap",
+            }
+            status_colors = {
+                "primary_field_overlap": "text-emerald-800",
+                "partial_only": "text-amber-800",
+                "no_overlap": "text-red-800",
+            }
+
+            def render_review_item(item: ObjectReviewItem) -> None:
+                status_label = status_labels[item.agreement_status]
+                title = (
+                    f"{position_label(item)} · {CODE_TYPE_LABELS[item.object_type]} · "
+                    f"{status_label}"
+                )
+                if item.agreement_status == "no_overlap":
+                    title += (
+                        f" · Coder {left_letter} only"
+                        if item.left_coding_id
+                        else f" · Coder {right_letter} only"
+                    )
+                with ui.expansion(title, value=False).classes(
+                    f"w-full border rounded bg-white {status_colors[item.agreement_status]}"
+                ):
+                    if item.left_coding_id and item.right_coding_id:
+                        with ui.row().classes("w-full items-start no-wrap gap-3 text-slate-900"):
+                            with ui.column().classes("w-1/2 gap-1"):
+                                ui.label(
+                                    f"Coder {left_letter} · {pair.left_label}"
+                                ).classes(
+                                    "text-xs font-semibold"
+                                )
+                                _render_entry(
+                                    left, left_entries[item.left_coding_id], pair
+                                )
+                            with ui.column().classes("w-1/2 gap-1"):
+                                ui.label(
+                                    f"Coder {right_letter} · {pair.right_label}"
+                                ).classes(
+                                    "text-xs font-semibold"
+                                )
+                                _render_entry(
+                                    right, right_entries[item.right_coding_id], pair
+                                )
+                    elif item.left_coding_id:
+                        with ui.column().classes("w-full gap-1 text-slate-900"):
+                            ui.label(
+                                f"Coder {left_letter} · {pair.left_label}"
+                            ).classes(
+                                "text-xs font-semibold"
+                            )
+                            _render_entry(left, left_entries[item.left_coding_id], pair)
+                    elif item.right_coding_id:
+                        with ui.column().classes("w-full gap-1 text-slate-900"):
+                            ui.label(
+                                f"Coder {right_letter} · {pair.right_label}"
+                            ).classes(
+                                "text-xs font-semibold"
+                            )
+                            _render_entry(right, right_entries[item.right_coding_id], pair)
+
+            _render_parent_code_summary(report, pair)
+
+            with ui.row().classes("w-full items-end justify-between gap-3 flex-wrap mt-2"):
+                ui.label("Detailed coding objects").classes("text-lg font-semibold")
+                order_select = ui.select(
+                    options={
+                        "grouped": "Parent code, then interview order",
+                        "interview": "Interview order only",
+                    },
+                    value=state["detail_order"],
+                    label="View order",
+                ).classes("w-80")
+
+                def order_changed(event) -> None:
+                    state["detail_order"] = str(event.value)
+                    _render_report()
+
+                order_select.on_value_change(order_changed)
+
+            if state["detail_order"] == "grouped":
+                for object_type in PARENT_CODE_ORDER:
+                    items = [
+                        item
+                        for item in pair.object_review_items
+                        if item.object_type == object_type
+                    ]
+                    ui.label(f"{CODE_TYPE_LABELS[object_type]} ({len(items)})").classes(
+                        "font-semibold mt-2"
+                    )
+                    if not items:
+                        ui.label("No coding objects.").classes("text-xs text-gray-500")
+                    for item in items:
+                        render_review_item(item)
+            else:
+                if not pair.object_review_items:
+                    ui.label("No coding objects.").classes("text-sm text-gray-600")
+                for item in pair.object_review_items:
+                    render_review_item(item)
+
+            with ui.expansion("Focused transcript evidence", value=False).classes(
+                "w-full border rounded bg-white mt-2"
             ):
                 if not pair.annotation_matches:
                     ui.label("No matched transcript spans.").classes("text-sm text-gray-600")
@@ -444,50 +677,6 @@ def render_agreement_page() -> None:
                                     f"{'local transcript' if local else 'export fallback'}"
                                 ).classes("text-[10px] text-gray-600")
                                 ui.label(excerpt).classes("text-xs whitespace-pre-wrap")
-
-            with ui.expansion("Discrepancies", value=True).classes(
-                "w-full border rounded bg-white"
-            ):
-                ui.label("Unmatched coding objects").classes("font-semibold")
-                with ui.row().classes("w-full items-start no-wrap gap-3"):
-                    for ids, label in (
-                        (pair.unmatched_left_coding_ids, pair.left_label),
-                        (pair.unmatched_right_coding_ids, pair.right_label),
-                    ):
-                        with ui.column().classes("w-1/2 gap-1"):
-                            ui.label(label).classes("text-xs font-semibold")
-                            if ids:
-                                for coding_id in ids:
-                                    ui.label(coding_id).classes("font-mono text-xs")
-                            else:
-                                ui.label("None").classes("text-xs text-gray-500")
-
-                ui.label("Unmatched primary spans").classes("font-semibold mt-2")
-                matched = matched_annotation_keys(pair)
-                unmatched = [
-                    annotation
-                    for source in (left, right)
-                    for annotation in source.annotations
-                    if annotation.key not in matched
-                ]
-                if unmatched:
-                    for annotation in unmatched:
-                        ui.label(
-                            f"{annotation.source_label} · {annotation.coding_id} · "
-                            f"{annotation.field_path} · {annotation.span.range_label}"
-                        ).classes("text-xs")
-                else:
-                    ui.label("None").classes("text-xs text-gray-500")
-
-                ui.label("Differing categorical values").classes("font-semibold mt-2")
-                differing = [item for item in pair.categorical_comparisons if not item.agrees]
-                if differing:
-                    for item in differing:
-                        ui.label(
-                            f"{item.field_path}: {_short(item.left_value)} ↔ {_short(item.right_value)}"
-                        ).classes("text-xs text-red-800")
-                else:
-                    ui.label("None").classes("text-xs text-gray-500")
 
         def _render_report() -> None:
             report_container.clear()

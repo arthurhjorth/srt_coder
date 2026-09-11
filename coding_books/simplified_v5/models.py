@@ -100,7 +100,6 @@ class TranscriptSpan(CodingBookModel):
     end_segment_id: str
     end_char_offset: int
     selected_text: str
-    comment: str | None = None
     comment: str | None = Field(
         default=None,
         description="Optional coder comment attached specifically to this transcript span.",

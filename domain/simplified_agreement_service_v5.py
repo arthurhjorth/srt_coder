@@ -21,6 +21,14 @@ from domain.simplified_schema_migration import migrate_export_payload
 
 SpanMode = Literal["exact", "partial"]
 FieldMode = Literal["exact", "normalized", "ignore"]
+AgreementStatus = Literal["primary_field_overlap", "partial_only", "no_overlap"]
+
+PARENT_CODE_ORDER = ("differentiation", "comparison", "nuance")
+PRIMARY_FIELD_PATHS = {
+    "differentiation": {"differentiation.thing_being_considered"},
+    "comparison": {"comparison.thing_a", "comparison.thing_b"},
+    "nuance": {"nuance.outcome_or_goal_y"},
+}
 
 
 @dataclass(frozen=True)
@@ -100,7 +108,32 @@ class ObjectAlignment:
     right_coding_id: str
     object_type: str
     matched_span_count: int
+    primary_field_matched_span_count: int
+    primary_field_overlap: bool
     total_overlap_quality: float
+
+
+@dataclass(frozen=True)
+class ParentCodeAgreementSummary:
+    object_type: str
+    left_identified: int
+    right_identified: int
+    overlap: int
+    primary_field_overlap: int
+    partial_only: int
+    no_overlap_left: int
+    no_overlap_right: int
+
+
+@dataclass(frozen=True)
+class ObjectReviewItem:
+    object_type: str
+    agreement_status: AgreementStatus
+    left_coding_id: str | None
+    right_coding_id: str | None
+    interview_file: str
+    start_segment_id: str | None
+    start_char_offset: int | None
 
 
 @dataclass(frozen=True)
@@ -127,6 +160,8 @@ class PairAgreement:
     f1: float
     annotation_matches: list[AnnotationMatch]
     object_alignments: list[ObjectAlignment]
+    parent_code_summaries: list[ParentCodeAgreementSummary]
+    object_review_items: list[ObjectReviewItem]
     unmatched_left_coding_ids: list[str]
     unmatched_right_coding_ids: list[str]
     categorical_comparisons: list[CategoricalComparison]
@@ -233,7 +268,9 @@ def load_agreement_export(
                 )
                 included_for_coding += 1
         if not included_for_coding:
-            warnings.append(f"Coding {coding.coding_id} has no primary transcript spans.")
+            warnings.append(
+                f"Coding {coding.coding_id} has no agreement-eligible transcript spans."
+            )
     return AgreementSource(
         source_index=source_index,
         source_name=source_name,
@@ -424,6 +461,12 @@ def _build_pair(
     alignments = _align_objects(left, right, rules)
     aligned_left = {item.left_coding_id for item in alignments}
     aligned_right = {item.right_coding_id for item in alignments}
+    unmatched_left_coding_ids = [
+        entry.coding_id for entry in left.codings if entry.coding_id not in aligned_left
+    ]
+    unmatched_right_coding_ids = [
+        entry.coding_id for entry in right.codings if entry.coding_id not in aligned_right
+    ]
     return PairAgreement(
         left_source_index=left.source_index,
         right_source_index=right.source_index,
@@ -437,12 +480,16 @@ def _build_pair(
         f1=(2 * precision * recall / (precision + recall)) if precision + recall else 0.0,
         annotation_matches=matches,
         object_alignments=alignments,
-        unmatched_left_coding_ids=[
-            entry.coding_id for entry in left.codings if entry.coding_id not in aligned_left
-        ],
-        unmatched_right_coding_ids=[
-            entry.coding_id for entry in right.codings if entry.coding_id not in aligned_right
-        ],
+        parent_code_summaries=_parent_code_summaries(left, right, alignments),
+        object_review_items=_object_review_items(
+            left,
+            right,
+            alignments,
+            unmatched_left_coding_ids,
+            unmatched_right_coding_ids,
+        ),
+        unmatched_left_coding_ids=unmatched_left_coding_ids,
+        unmatched_right_coding_ids=unmatched_right_coding_ids,
         categorical_comparisons=_categorical_comparisons(left, right, alignments, rules),
     )
 
@@ -454,23 +501,50 @@ def _align_objects(
 ) -> list[ObjectAlignment]:
     annotations_left = _annotations_by_coding(left.annotations)
     annotations_right = _annotations_by_coding(right.annotations)
+    object_rules = AgreementRules(
+        span_mode=rules.span_mode,
+        field_mode="ignore",
+        require_same_object_type=True,
+    )
     candidates: list[tuple[int, int, int]] = []
-    details: dict[tuple[int, int], tuple[int, float]] = {}
+    details: dict[tuple[int, int], tuple[int, int, float]] = {}
     for left_index, left_entry in enumerate(left.codings):
         for right_index, right_entry in enumerate(right.codings):
-            if rules.require_same_object_type and left_entry.object_type != right_entry.object_type:
+            if left_entry.object_type != right_entry.object_type:
                 continue
             matches = _annotation_matches(
                 annotations_left.get(left_entry.coding_id, []),
                 annotations_right.get(right_entry.coding_id, []),
-                rules,
+                object_rules,
             )
             if not matches:
                 continue
+            primary_paths = PRIMARY_FIELD_PATHS.get(left_entry.object_type, set())
+            primary_matches = _annotation_matches(
+                [
+                    annotation
+                    for annotation in annotations_left.get(left_entry.coding_id, [])
+                    if annotation.field_path in primary_paths
+                ],
+                [
+                    annotation
+                    for annotation in annotations_right.get(right_entry.coding_id, [])
+                    if annotation.field_path in primary_paths
+                ],
+                object_rules,
+            )
             quality = sum(match.quality for match in matches)
-            weight = len(matches) * 1_000_000 + int(round(quality * 1_000))
+            weight = (
+                len(primary_matches) * 1_000_000_000
+                + len(matches) * 1_000_000
+                + int(round(quality * 1_000))
+            )
             candidates.append((left_index, right_index, weight))
-            details[(left_index, right_index)] = (len(matches), quality)
+            details[(left_index, right_index)] = (
+                len(matches),
+                len(primary_matches),
+                quality,
+            )
     pairs = _weighted_maximum_cardinality_matching(
         len(left.codings), len(right.codings), candidates
     )
@@ -485,10 +559,138 @@ def _align_objects(
                 else f"{left.codings[left_index].object_type}/{right.codings[right_index].object_type}"
             ),
             matched_span_count=details[(left_index, right_index)][0],
-            total_overlap_quality=details[(left_index, right_index)][1],
+            primary_field_matched_span_count=details[(left_index, right_index)][1],
+            primary_field_overlap=details[(left_index, right_index)][1] > 0,
+            total_overlap_quality=details[(left_index, right_index)][2],
         )
         for left_index, right_index in pairs
     ]
+
+
+def _parent_code_summaries(
+    left: AgreementSource,
+    right: AgreementSource,
+    alignments: list[ObjectAlignment],
+) -> list[ParentCodeAgreementSummary]:
+    summaries: list[ParentCodeAgreementSummary] = []
+    for object_type in PARENT_CODE_ORDER:
+        left_count = sum(entry.object_type == object_type for entry in left.codings)
+        right_count = sum(entry.object_type == object_type for entry in right.codings)
+        aligned = [item for item in alignments if item.object_type == object_type]
+        primary_count = sum(item.primary_field_overlap for item in aligned)
+        overlap_count = len(aligned)
+        summaries.append(
+            ParentCodeAgreementSummary(
+                object_type=object_type,
+                left_identified=left_count,
+                right_identified=right_count,
+                overlap=overlap_count,
+                primary_field_overlap=primary_count,
+                partial_only=overlap_count - primary_count,
+                no_overlap_left=left_count - overlap_count,
+                no_overlap_right=right_count - overlap_count,
+            )
+        )
+    return summaries
+
+
+def _object_review_items(
+    left: AgreementSource,
+    right: AgreementSource,
+    alignments: list[ObjectAlignment],
+    unmatched_left_coding_ids: list[str],
+    unmatched_right_coding_ids: list[str],
+) -> list[ObjectReviewItem]:
+    left_annotations = _annotations_by_coding(left.annotations)
+    right_annotations = _annotations_by_coding(right.annotations)
+    left_entries = {entry.coding_id: entry for entry in left.codings}
+    right_entries = {entry.coding_id: entry for entry in right.codings}
+    items: list[tuple[tuple[Any, ...], ObjectReviewItem]] = []
+
+    for stable_index, alignment in enumerate(alignments):
+        annotations = (
+            left_annotations.get(alignment.left_coding_id, [])
+            + right_annotations.get(alignment.right_coding_id, [])
+        )
+        earliest = _earliest_annotation(annotations)
+        item = ObjectReviewItem(
+            object_type=alignment.object_type,
+            agreement_status=(
+                "primary_field_overlap"
+                if alignment.primary_field_overlap
+                else "partial_only"
+            ),
+            left_coding_id=alignment.left_coding_id,
+            right_coding_id=alignment.right_coding_id,
+            interview_file=earliest.interview_file if earliest else "",
+            start_segment_id=earliest.span.start_segment_id if earliest else None,
+            start_char_offset=earliest.span.start_char_offset if earliest else None,
+        )
+        items.append((_review_item_order_key(item, 0, stable_index), item))
+
+    for side_rank, (source, entries, annotations_by_id, coding_ids) in enumerate(
+        (
+            (left, left_entries, left_annotations, unmatched_left_coding_ids),
+            (right, right_entries, right_annotations, unmatched_right_coding_ids),
+        ),
+        start=1,
+    ):
+        for stable_index, coding_id in enumerate(coding_ids):
+            entry = entries[coding_id]
+            earliest = _earliest_annotation(annotations_by_id.get(coding_id, []))
+            item = ObjectReviewItem(
+                object_type=entry.object_type,
+                agreement_status="no_overlap",
+                left_coding_id=coding_id if source.source_index == left.source_index else None,
+                right_coding_id=coding_id if source.source_index == right.source_index else None,
+                interview_file=(
+                    earliest.interview_file
+                    if earliest
+                    else entry.interview_file
+                ),
+                start_segment_id=earliest.span.start_segment_id if earliest else None,
+                start_char_offset=earliest.span.start_char_offset if earliest else None,
+            )
+            items.append(
+                (_review_item_order_key(item, side_rank, stable_index), item)
+            )
+
+    return [item for _key, item in sorted(items, key=lambda pair: pair[0])]
+
+
+def _earliest_annotation(
+    annotations: list[NormalizedAnnotation],
+) -> NormalizedAnnotation | None:
+    if not annotations:
+        return None
+    return min(
+        annotations,
+        key=lambda annotation: (
+            annotation.interview_file,
+            _ordered_span_points(annotation.span)[0],
+            annotation.key,
+        ),
+    )
+
+
+def _review_item_order_key(
+    item: ObjectReviewItem,
+    side_rank: int,
+    stable_index: int,
+) -> tuple[Any, ...]:
+    if item.start_segment_id is None or item.start_char_offset is None:
+        position: tuple[Any, ...] = (1, 0, "", 0)
+    else:
+        point = _span_point(item.start_segment_id, item.start_char_offset)
+        position = (0, *point)
+    return (
+        item.interview_file,
+        position,
+        side_rank,
+        stable_index,
+        item.left_coding_id or "",
+        item.right_coding_id or "",
+    )
 
 
 def _categorical_comparisons(
@@ -667,6 +869,15 @@ def report_as_json(report: AgreementReport) -> str:
 
 def report_as_csv(report: AgreementReport) -> str:
     output = StringIO()
+    parent_metric_names = (
+        "left_identified",
+        "right_identified",
+        "overlap",
+        "primary_field_overlap",
+        "partial_only",
+        "no_overlap_left",
+        "no_overlap_right",
+    )
     writer = csv.DictWriter(
         output,
         fieldnames=[
@@ -684,30 +895,39 @@ def report_as_csv(report: AgreementReport) -> str:
             "aligned_objects",
             "unmatched_left_objects",
             "unmatched_right_objects",
+        ]
+        + [
+            f"{object_type}_{metric}"
+            for object_type in PARENT_CODE_ORDER
+            for metric in parent_metric_names
         ],
     )
     writer.writeheader()
     for pair in report.pair_agreements:
-        writer.writerow(
-            {
-                "left_source": pair.left_label,
-                "right_source": pair.right_label,
-                "true_positives": pair.true_positives,
-                "false_positives": pair.false_positives,
-                "false_negatives": pair.false_negatives,
-                "precision": f"{pair.precision:.6f}",
-                "recall": f"{pair.recall:.6f}",
-                "f1": f"{pair.f1:.6f}",
-                "categorical_matches": pair.categorical_matches,
-                "categorical_total": pair.categorical_total,
-                "categorical_agreement": (
-                    "" if pair.categorical_agreement is None else f"{pair.categorical_agreement:.6f}"
-                ),
-                "aligned_objects": len(pair.object_alignments),
-                "unmatched_left_objects": len(pair.unmatched_left_coding_ids),
-                "unmatched_right_objects": len(pair.unmatched_right_coding_ids),
-            }
-        )
+        row = {
+            "left_source": pair.left_label,
+            "right_source": pair.right_label,
+            "true_positives": pair.true_positives,
+            "false_positives": pair.false_positives,
+            "false_negatives": pair.false_negatives,
+            "precision": f"{pair.precision:.6f}",
+            "recall": f"{pair.recall:.6f}",
+            "f1": f"{pair.f1:.6f}",
+            "categorical_matches": pair.categorical_matches,
+            "categorical_total": pair.categorical_total,
+            "categorical_agreement": (
+                ""
+                if pair.categorical_agreement is None
+                else f"{pair.categorical_agreement:.6f}"
+            ),
+            "aligned_objects": len(pair.object_alignments),
+            "unmatched_left_objects": len(pair.unmatched_left_coding_ids),
+            "unmatched_right_objects": len(pair.unmatched_right_coding_ids),
+        }
+        for summary in pair.parent_code_summaries:
+            for metric in parent_metric_names:
+                row[f"{summary.object_type}_{metric}"] = getattr(summary, metric)
+        writer.writerow(row)
     return "\ufeff" + output.getvalue()
 
 
@@ -726,7 +946,11 @@ def _pair_as_dict(pair: PairAgreement) -> dict[str, Any]:
         "categorical_matches": pair.categorical_matches,
         "categorical_total": pair.categorical_total,
         "categorical_agreement": pair.categorical_agreement,
+        "parent_code_summaries": [
+            asdict(item) for item in pair.parent_code_summaries
+        ],
         "object_alignments": [asdict(item) for item in pair.object_alignments],
+        "object_review_items": [asdict(item) for item in pair.object_review_items],
         "unmatched_left_coding_ids": pair.unmatched_left_coding_ids,
         "unmatched_right_coding_ids": pair.unmatched_right_coding_ids,
         "categorical_comparisons": [asdict(item) for item in pair.categorical_comparisons],
