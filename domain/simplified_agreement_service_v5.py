@@ -114,12 +114,23 @@ class ObjectAlignment:
 
 
 @dataclass(frozen=True)
+class PerspectiveAlignment:
+    left_coding_id: str
+    right_coding_id: str
+    left_perspective_index: int
+    right_perspective_index: int
+    matched_span_count: int
+    total_overlap_quality: float
+
+
+@dataclass(frozen=True)
 class ParentCodeAgreementSummary:
     object_type: str
     left_identified: int
     right_identified: int
     overlap: int
     primary_field_overlap: int
+    matched_perspective_pairs: int | None
     partial_only: int
     no_overlap_left: int
     no_overlap_right: int
@@ -144,6 +155,7 @@ class CategoricalComparison:
     left_value: Any
     right_value: Any
     agrees: bool
+    included_in_score: bool
 
 
 @dataclass(frozen=True)
@@ -160,6 +172,7 @@ class PairAgreement:
     f1: float
     annotation_matches: list[AnnotationMatch]
     object_alignments: list[ObjectAlignment]
+    perspective_alignments: list[PerspectiveAlignment]
     parent_code_summaries: list[ParentCodeAgreementSummary]
     object_review_items: list[ObjectReviewItem]
     unmatched_left_coding_ids: list[str]
@@ -168,17 +181,21 @@ class PairAgreement:
 
     @property
     def categorical_total(self) -> int:
-        return len(self.categorical_comparisons)
+        return sum(item.included_in_score for item in self.categorical_comparisons)
 
     @property
     def categorical_matches(self) -> int:
-        return sum(item.agrees for item in self.categorical_comparisons)
+        return sum(
+            item.agrees
+            for item in self.categorical_comparisons
+            if item.included_in_score
+        )
 
     @property
     def categorical_agreement(self) -> float | None:
-        if not self.categorical_comparisons:
+        if not self.categorical_total:
             return None
-        return self.categorical_matches / len(self.categorical_comparisons)
+        return self.categorical_matches / self.categorical_total
 
 
 @dataclass(frozen=True)
@@ -201,7 +218,10 @@ class AgreementReport:
 
 def agreement_field_path_is_ignored(field_path: str) -> bool:
     final_name = re.split(r"\.|\]", field_path)[-1]
-    return final_name == "coder_note" or final_name.endswith("_comment")
+    return (
+        final_name in {"coder_note", "perspective_types"}
+        or final_name.endswith("_comment")
+    )
 
 
 def normalize_field_path(field_path: str) -> str:
@@ -459,6 +479,7 @@ def _build_pair(
         else 0.0
     )
     alignments = _align_objects(left, right, rules)
+    perspective_alignments = _align_perspectives(left, right, alignments, rules)
     aligned_left = {item.left_coding_id for item in alignments}
     aligned_right = {item.right_coding_id for item in alignments}
     unmatched_left_coding_ids = [
@@ -480,7 +501,13 @@ def _build_pair(
         f1=(2 * precision * recall / (precision + recall)) if precision + recall else 0.0,
         annotation_matches=matches,
         object_alignments=alignments,
-        parent_code_summaries=_parent_code_summaries(left, right, alignments),
+        perspective_alignments=perspective_alignments,
+        parent_code_summaries=_parent_code_summaries(
+            left,
+            right,
+            alignments,
+            perspective_alignments,
+        ),
         object_review_items=_object_review_items(
             left,
             right,
@@ -490,7 +517,12 @@ def _build_pair(
         ),
         unmatched_left_coding_ids=unmatched_left_coding_ids,
         unmatched_right_coding_ids=unmatched_right_coding_ids,
-        categorical_comparisons=_categorical_comparisons(left, right, alignments, rules),
+        categorical_comparisons=_categorical_comparisons(
+            left,
+            right,
+            alignments,
+            perspective_alignments,
+        ),
     )
 
 
@@ -567,10 +599,71 @@ def _align_objects(
     ]
 
 
+def _align_perspectives(
+    left: AgreementSource,
+    right: AgreementSource,
+    object_alignments: list[ObjectAlignment],
+    rules: AgreementRules,
+) -> list[PerspectiveAlignment]:
+    annotations_left = _annotations_by_coding(left.annotations)
+    annotations_right = _annotations_by_coding(right.annotations)
+    perspective_rules = AgreementRules(
+        span_mode=rules.span_mode,
+        field_mode="ignore",
+        require_same_object_type=True,
+    )
+    aligned: list[PerspectiveAlignment] = []
+    for object_alignment in object_alignments:
+        if object_alignment.object_type != "differentiation":
+            continue
+        left_groups = _perspective_annotations_by_index(
+            annotations_left.get(object_alignment.left_coding_id, [])
+        )
+        right_groups = _perspective_annotations_by_index(
+            annotations_right.get(object_alignment.right_coding_id, [])
+        )
+        left_indices = sorted(left_groups)
+        right_indices = sorted(right_groups)
+        candidates: list[tuple[int, int, int]] = []
+        details: dict[tuple[int, int], tuple[int, float]] = {}
+        for left_position, left_index in enumerate(left_indices):
+            for right_position, right_index in enumerate(right_indices):
+                matches = _annotation_matches(
+                    left_groups[left_index],
+                    right_groups[right_index],
+                    perspective_rules,
+                )
+                if not matches:
+                    continue
+                quality = sum(match.quality for match in matches)
+                weight = len(matches) * 1_000_000 + int(round(quality * 1_000))
+                candidates.append((left_position, right_position, weight))
+                details[(left_position, right_position)] = (len(matches), quality)
+        pairs = _weighted_maximum_cardinality_matching(
+            len(left_indices),
+            len(right_indices),
+            candidates,
+        )
+        for left_position, right_position in pairs:
+            matched_span_count, quality = details[(left_position, right_position)]
+            aligned.append(
+                PerspectiveAlignment(
+                    left_coding_id=object_alignment.left_coding_id,
+                    right_coding_id=object_alignment.right_coding_id,
+                    left_perspective_index=left_indices[left_position],
+                    right_perspective_index=right_indices[right_position],
+                    matched_span_count=matched_span_count,
+                    total_overlap_quality=quality,
+                )
+            )
+    return aligned
+
+
 def _parent_code_summaries(
     left: AgreementSource,
     right: AgreementSource,
     alignments: list[ObjectAlignment],
+    perspective_alignments: list[PerspectiveAlignment],
 ) -> list[ParentCodeAgreementSummary]:
     summaries: list[ParentCodeAgreementSummary] = []
     for object_type in PARENT_CODE_ORDER:
@@ -586,6 +679,11 @@ def _parent_code_summaries(
                 right_identified=right_count,
                 overlap=overlap_count,
                 primary_field_overlap=primary_count,
+                matched_perspective_pairs=(
+                    len(perspective_alignments)
+                    if object_type == "differentiation"
+                    else None
+                ),
                 partial_only=overlap_count - primary_count,
                 no_overlap_left=left_count - overlap_count,
                 no_overlap_right=right_count - overlap_count,
@@ -697,12 +795,10 @@ def _categorical_comparisons(
     left: AgreementSource,
     right: AgreementSource,
     alignments: list[ObjectAlignment],
-    rules: AgreementRules,
+    perspective_alignments: list[PerspectiveAlignment],
 ) -> list[CategoricalComparison]:
     left_entries = {entry.coding_id: entry for entry in left.codings}
     right_entries = {entry.coding_id: entry for entry in right.codings}
-    left_annotations = _annotations_by_coding(left.annotations)
-    right_annotations = _annotations_by_coding(right.annotations)
     comparisons: list[CategoricalComparison] = []
     for alignment in alignments:
         left_entry = left_entries[alignment.left_coding_id]
@@ -725,23 +821,21 @@ def _categorical_comparisons(
                         left_value=left_value,
                         right_value=right_value,
                         agrees=left_value == right_value,
+                        included_in_score=True,
                     )
                 )
         if isinstance(left_entry.coding, DifferentiationCoding) and isinstance(
             right_entry.coding, DifferentiationCoding
         ):
-            span_matches = _annotation_matches(
-                left_annotations.get(left_entry.coding_id, []),
-                right_annotations.get(right_entry.coding_id, []),
-                rules,
-            )
-            perspective_pairs: set[tuple[int, int]] = set()
-            for match in span_matches:
-                left_index = _perspective_text_index(match.left.field_path)
-                right_index = _perspective_text_index(match.right.field_path)
-                if left_index is not None and right_index is not None:
-                    perspective_pairs.add((left_index, right_index))
-            for left_index, right_index in sorted(perspective_pairs):
+            perspective_pairs = [
+                item
+                for item in perspective_alignments
+                if item.left_coding_id == left_entry.coding_id
+                and item.right_coding_id == right_entry.coding_id
+            ]
+            for perspective_alignment in perspective_pairs:
+                left_index = perspective_alignment.left_perspective_index
+                right_index = perspective_alignment.right_perspective_index
                 if left_index >= len(left_entry.coding.fields.perspectives) or right_index >= len(
                     right_entry.coding.fields.perspectives
                 ):
@@ -771,6 +865,7 @@ def _categorical_comparisons(
                         left_value=left_values,
                         right_value=right_values,
                         agrees=left_values == right_values,
+                        included_in_score=False,
                     )
                 )
     return comparisons
@@ -779,6 +874,17 @@ def _categorical_comparisons(
 def _perspective_text_index(path: str) -> int | None:
     match = re.fullmatch(r"differentiation\.perspectives\[(\d+)\]\.text", path)
     return int(match.group(1)) if match else None
+
+
+def _perspective_annotations_by_index(
+    annotations: list[NormalizedAnnotation],
+) -> dict[int, list[NormalizedAnnotation]]:
+    grouped: dict[int, list[NormalizedAnnotation]] = {}
+    for annotation in annotations:
+        index = _perspective_text_index(annotation.field_path)
+        if index is not None:
+            grouped.setdefault(index, []).append(annotation)
+    return grouped
 
 
 def _annotations_by_coding(
@@ -874,6 +980,7 @@ def report_as_csv(report: AgreementReport) -> str:
         "right_identified",
         "overlap",
         "primary_field_overlap",
+        "matched_perspective_pairs",
         "partial_only",
         "no_overlap_left",
         "no_overlap_right",
@@ -950,6 +1057,9 @@ def _pair_as_dict(pair: PairAgreement) -> dict[str, Any]:
             asdict(item) for item in pair.parent_code_summaries
         ],
         "object_alignments": [asdict(item) for item in pair.object_alignments],
+        "perspective_alignments": [
+            asdict(item) for item in pair.perspective_alignments
+        ],
         "object_review_items": [asdict(item) for item in pair.object_review_items],
         "unmatched_left_coding_ids": pair.unmatched_left_coding_ids,
         "unmatched_right_coding_ids": pair.unmatched_right_coding_ids,
