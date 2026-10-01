@@ -148,7 +148,8 @@ def render_agreement_page() -> None:
             with ui.column().classes("gap-0"):
                 ui.label("Coding Agreement · v5").classes("text-2xl font-semibold")
                 ui.label(
-                    "Span agreement and categorical agreement are reported separately. "
+                    "Span agreement and scored categorical agreement are reported separately. "
+                    "Perspective-type differences remain color-coded but are not scored. "
                     "Comments and coder notes are shown only for neutral review."
                 ).classes("text-sm text-gray-700")
             ui.button("Back to dashboard", on_click=lambda: ui.navigate.to("/")).props("flat")
@@ -217,11 +218,6 @@ def render_agreement_page() -> None:
             ).props('accept=".json"')
 
             with ui.row().classes("w-full items-end gap-3 flex-wrap"):
-                span_mode = ui.select(
-                    options={"partial": "Any overlap", "exact": "Exact span"},
-                    value="partial",
-                    label="Span rule",
-                ).classes("w-56")
                 field_mode = ui.select(
                     options={
                         "normalized": "Same field (ignore list index)",
@@ -238,13 +234,12 @@ def render_agreement_page() -> None:
 
             def rules_changed(_event=None) -> None:
                 state["rules"] = AgreementRules(
-                    span_mode=span_mode.value,
+                    span_mode="partial",
                     field_mode=field_mode.value,
                     require_same_object_type=bool(same_type.value),
                 )
                 _rebuild_report()
 
-            span_mode.on_value_change(rules_changed)
             field_mode.on_value_change(rules_changed)
             same_type.on_value_change(rules_changed)
 
@@ -445,10 +440,19 @@ def render_agreement_page() -> None:
                 "Comparison — Thing A and Thing B; Nuance — Outcome or goal (Y)."
             ).classes("text-sm text-gray-700")
             ui.label(
-                "Overlap is the total number of one-to-one object pairs and equals "
-                "PF overlap plus Partial only. PF overlap means the primary fields "
-                "overlap. Partial only means another field overlaps but the primary "
-                "fields do not. No overlap lists the unpaired objects for each coder."
+                "Paired objects is the number of one-to-one code-object pairs connected "
+                "by at least one eligible transcript-span overlap. Selections only need "
+                "to share some text; their boundaries do not need to be identical. "
+                "Paired objects equals PF overlap plus Non-PF-only. PF overlap "
+                "means the primary fields overlap. Non-PF-only means another field overlaps "
+                "but the primary fields do not. No overlap lists unpaired objects."
+            ).classes("text-sm text-gray-700")
+            ui.label(
+                "Matched perspective pairs counts individual one-to-one perspective-text "
+                "matches inside paired Differentiation objects. It is a perspective count, "
+                "not an object count, so it does not add up with the other columns. "
+                "Perspective-type choices are color-coded in the detailed view but excluded "
+                "from the categorical score."
             ).classes("text-sm text-gray-700")
             rows = [
                 {
@@ -457,6 +461,11 @@ def render_agreement_page() -> None:
                     "right_identified": summary.right_identified,
                     "overlap": summary.overlap,
                     "primary": summary.primary_field_overlap,
+                    "perspectives": (
+                        summary.matched_perspective_pairs
+                        if summary.matched_perspective_pairs is not None
+                        else "—"
+                    ),
                     "partial": summary.partial_only,
                     "none": (
                         f"{left_letter}: {summary.no_overlap_left} · "
@@ -486,7 +495,7 @@ def render_agreement_page() -> None:
                 },
                 {
                     "name": "overlap",
-                    "label": "Overlap",
+                    "label": "Paired objects",
                     "field": "overlap",
                     "align": "right",
                 },
@@ -497,8 +506,14 @@ def render_agreement_page() -> None:
                     "align": "right",
                 },
                 {
+                    "name": "perspectives",
+                    "label": "Matched perspective pairs",
+                    "field": "perspectives",
+                    "align": "right",
+                },
+                {
                     "name": "partial",
-                    "label": "Partial only",
+                    "label": "Non-PF-only",
                     "field": "partial",
                     "align": "right",
                 },
@@ -557,7 +572,7 @@ def render_agreement_page() -> None:
 
             status_labels = {
                 "primary_field_overlap": "PF overlap",
-                "partial_only": "Partial only",
+                "partial_only": "Non-PF-only",
                 "no_overlap": "No overlap",
             }
             status_colors = {
@@ -696,7 +711,7 @@ def render_agreement_page() -> None:
                                 f"R {_percent(pair.recall)}"
                             ).classes("text-xs")
                             ui.label(
-                                f"Categorical agreement {_percent(pair.categorical_agreement)} "
+                                f"Scored categorical agreement {_percent(pair.categorical_agreement)} "
                                 f"({pair.categorical_matches}/{pair.categorical_total})"
                             ).classes("text-xs")
                 with ui.row().classes("w-full items-center gap-3 flex-wrap"):
@@ -746,7 +761,7 @@ def render_agreement_page() -> None:
                         _render_metric("Span recall", _percent(pair.recall))
                         _render_metric("Span F1", _percent(pair.f1))
                         _render_metric(
-                            "Categorical", _percent(pair.categorical_agreement)
+                            "Scored categorical", _percent(pair.categorical_agreement)
                         )
                     _render_pair_detail(report, pair)
 
