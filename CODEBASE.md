@@ -621,19 +621,24 @@ is the unused earlier dashboard panel. `ui/pages/coder.py` and
 `domain/simplified_agreement_service_v5.py` is UI-independent and accepts v5
 exports plus in-memory-migrated v4 exports. Every agreement-eligible `field_spans` item
 becomes a normalized annotation; all `*_comment` paths and coder notes are
-excluded before matching. Match rules support exact/partial span overlap,
+excluded before matching. Perspective-type span paths are also excluded from
+annotation matching and every numerical agreement measure; their selected values
+remain available only for detailed green/red comparison. Match rules support exact/partial span overlap,
 exact/normalized/ignored field paths, and optional same-code-type enforcement.
 
 Each source pair uses deterministic maximum-cardinality one-to-one span matching,
 then total overlap quality and stable ordering as tie-breakers. It reports
 TP/FP/FN, precision, recall, and F1. Coding objects of the same parent type are
 aligned by any overlapping coded span; the alignment then records separately
-whether their designated primary fields overlap. Relation type, expressed
-certainty, and per-perspective
-type sets receive a separate categorical agreement score only inside aligned
-objects/perspectives; pairs where both values are missing are excluded. JSON and
-UTF-8 CSV serializers expose rules, source metadata, alignment, metrics, and
-discrepancies.
+whether their designated primary fields overlap. Perspectives inside aligned
+Differentiation objects are themselves paired one-to-one by overlapping
+perspective-text spans; their count is reported separately from the object
+count. Relation type and expressed certainty receive a scored categorical
+agreement measure inside aligned objects. Per-perspective type sets are compared
+for detailed green/red display but deliberately excluded from the categorical
+score. Pairs where both values are missing are excluded. JSON and UTF-8 CSV
+serializers expose rules, source metadata, object and perspective alignments,
+metrics, and discrepancies.
 
 ### Preserved legacy agreement service
 
@@ -694,14 +699,20 @@ spans should not be interpreted as a precise character-level ratio.
 `ui/pages/agreement_v5.py` reserves a source index before each asynchronous file
 read, preserving selection order. It hashes uploads to reject duplicate content
 and shows per-file errors, Remove, and Clear controls. More than two uploads
-produce all pairwise summaries and a selectable detailed pair.
+produce all pairwise summaries and a selectable detailed pair. The active UI
+always uses partial transcript-span overlap and does not expose the exact-span
+rule; exact matching remains available in the domain service and tests.
 
 For the selected source pair, an object-level table reports how many
 Differentiation, Comparison, and Nuance objects each coder identified. It splits
-one-to-one object overlaps into primary-field overlaps and partial-only overlaps,
-and reports each coder's remaining no-overlap count. Object pairing uses any
-overlapping coded span; primary fields are the Differentiation focus topic,
-Comparison Thing A/Thing B, and Nuance outcome Y.
+one-to-one paired objects into primary-field overlaps and non-primary-field-only
+overlaps, and reports each coder's remaining no-overlap count. Object pairing
+uses any overlapping coded span; primary fields are the Differentiation focus
+topic, Comparison Thing A/Thing B, and Nuance outcome Y. The Differentiation row
+also reports one-to-one matched perspective pairs. This is an individual
+perspective count and is intentionally not part of the paired-object arithmetic.
+The surrounding help text distinguishes partial span intersection from the
+non-primary-field-only object classification.
 
 Above the table, every uploaded filename receives a stable display letter in
 current source order (`A`, `B`, `C`, and so on), and the selected pair is stated
@@ -712,10 +723,11 @@ group first by parent code and then transcript position, or interleave all three
 codes strictly by transcript position. Aligned objects appear side by side;
 unmatched objects use the same full card renderer in a single-coder card. Field
 colors use the concrete source, coding ID, path, and actual matched annotation;
-categorical dropdowns use their separate categorical result. Comments and coder
-notes are always neutral. Focused transcript evidence uses the local SRT where
-available and exported text/coordinates otherwise. The old Mermaid, Sankey, and
-graph-heavy views remain only in preserved pages.
+categorical dropdowns use their separate categorical result. Perspective types
+retain this visual comparison even though they are excluded from the categorical
+score. Comments and coder notes are always neutral. Focused transcript evidence
+uses the local SRT where available and exported text/coordinates otherwise. The
+old Mermaid, Sankey, and graph-heavy views remain only in preserved pages.
 
 `ui/pages/agreement.py` is the preserved legacy visualization and is not imported
 by the active app. It keeps uploaded exports in a page-local Python list. Clear
