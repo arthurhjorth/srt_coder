@@ -134,6 +134,7 @@ def test_nuance_rewrite_round_trips_without_changing_original_evidence(tmp_path,
     coding.fields.x_y_connection = "original wording"
     coding.fields.x_y_connection_rewritten = True
     coding.fields.x_y_connection_rewrite = "More training reduces mistakes."
+    coding.fields.x_y_connection_rewrite_comment = "The causal connection is implicit here."
     evidence = {"nuance.x_y_connection": [_span("original wording")]}
     service.update_entry_payload(
         analysis_id="analysis-1", coding_id=created.coding_id,
@@ -142,6 +143,7 @@ def test_nuance_rewrite_round_trips_without_changing_original_evidence(tmp_path,
     loaded = repo.list_codings()[0]
     assert loaded.coding.fields.x_y_connection_rewritten is True
     assert loaded.coding.fields.x_y_connection_rewrite == "More training reduces mistakes."
+    assert loaded.coding.fields.x_y_connection_rewrite_comment == "The causal connection is implicit here."
     assert loaded.coding.fields.x_y_connection == "original wording"
     assert loaded.field_spans == evidence
     coding = loaded.coding.model_copy(deep=True)
@@ -151,4 +153,31 @@ def test_nuance_rewrite_round_trips_without_changing_original_evidence(tmp_path,
     )
     loaded = repo.list_codings()[0]
     assert loaded.coding.fields.x_y_connection_rewrite == "More training reduces mistakes."
+    assert loaded.coding.fields.x_y_connection_rewrite_comment == "The causal connection is implicit here."
     assert loaded.field_spans == evidence
+
+
+@pytest.mark.parametrize("include_comment,comment", [
+    (False, None), (True, None), (True, ""), (True, "  "),
+])
+def test_old_entries_with_missing_or_empty_rewrite_comments_load_without_file_changes(
+    tmp_path, monkeypatch, include_comment, comment
+) -> None:
+    path = tmp_path / "codings_simplified.json"
+    monkeypatch.setattr(repo, "SIMPLIFIED_CODINGS_JSON", path)
+    created = service.create_object_entry(
+        analysis_id="analysis-1", interview_file="interview.srt",
+        object_type="nuance", created_by="coder",
+    )
+    payload = json.loads(path.read_bytes())
+    fields = payload["codings"][0]["coding"]["fields"]
+    fields.pop("x_y_connection_rewrite_comment")
+    if include_comment:
+        fields["x_y_connection_rewrite_comment"] = comment
+    original = (json.dumps(payload) + "\n").encode("utf-8")
+    path.write_bytes(original)
+
+    loaded = repo.list_codings()[0]
+    assert loaded.coding_id == created.coding_id
+    assert loaded.coding.fields.x_y_connection_rewrite_comment in (None, "")
+    assert path.read_bytes() == original

@@ -150,14 +150,17 @@ def test_reordered_perspectives_are_counted_once_as_fields() -> None:
 
 def test_rewrites_and_their_possible_span_paths_are_neutral_and_not_scored() -> None:
     left = _source([_entry("left", NuanceCoding(fields=NuanceFields(
-        x_y_connection_rewritten=True, x_y_connection_rewrite="More training reduces mistakes"
+        x_y_connection_rewritten=True, x_y_connection_rewrite="More training reduces mistakes",
+        x_y_connection_rewrite_comment="An implicit connection",
     )), {
         "nuance.outcome_or_goal_y": [_span(0, 5)],
         "nuance.x_y_connection_rewrite": [_span(30, 35)],
         "nuance.x_y_connection_rewritten": [_span(40, 45)],
+        "nuance.x_y_connection_rewrite_comment": [_span(50, 55)],
     })], "left", 0)
     right = _source([_entry("right", NuanceCoding(fields=NuanceFields(
-        x_y_connection_rewritten=False, x_y_connection_rewrite="A different interpretation"
+        x_y_connection_rewritten=False, x_y_connection_rewrite="A different interpretation",
+        x_y_connection_rewrite_comment="A different comment",
     )), {"nuance.outcome_or_goal_y": [_span(0, 5)]})], "right", 1)
     pair = build_agreement_report([left, right]).pair_agreements[0]
     assert len(left.annotations) == 1
@@ -166,10 +169,15 @@ def test_rewrites_and_their_possible_span_paths_are_neutral_and_not_scored() -> 
     assert pair.categorical_total == 0
     rewrite_rows = [
         row for row in _field_rows(left.codings[0])
-        if row[0] in {"nuance.x_y_connection_rewrite", "nuance.x_y_connection_rewritten"}
+        if row[0] in {
+            "nuance.x_y_connection_rewrite",
+            "nuance.x_y_connection_rewritten",
+            "nuance.x_y_connection_rewrite_comment",
+        }
     ]
-    assert len(rewrite_rows) == 2
+    assert len(rewrite_rows) == 3
     assert all(row[3] for row in rewrite_rows)
+    assert _field_status(left, left.codings[0], "nuance.x_y_connection_rewrite_comment", pair) == "neutral"
 
 
 def test_downloads_distinguish_field_agreement_from_span_diagnostics() -> None:

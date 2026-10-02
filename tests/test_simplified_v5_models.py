@@ -73,11 +73,28 @@ def test_nuance_rewrite_is_optional_and_trims_outer_whitespace() -> None:
     legacy = NuanceFields.model_validate({"x_y_connection": "original wording"})
     assert legacy.x_y_connection_rewritten is None
     assert legacy.x_y_connection_rewrite is None
+    assert legacy.x_y_connection_rewrite_comment is None
     rewritten = NuanceFields(
         x_y_connection_rewritten=True,
         x_y_connection_rewrite="  More training reduces mistakes.  ",
+        x_y_connection_rewrite_comment="  The connection is implicit.  ",
     )
     assert rewritten.x_y_connection_rewrite == "More training reduces mistakes."
+    assert rewritten.x_y_connection_rewrite_comment == "The connection is implicit."
+
+
+@pytest.mark.parametrize("comment", [None, "", "  ", "A coder explanation"])
+def test_rewrite_comment_is_optional_and_does_not_affect_completeness(comment) -> None:
+    fields = NuanceFields(
+        relation_type="expected_effect",
+        influence_or_action_x="training",
+        outcome_or_goal_y="fewer mistakes",
+        expressed_certainty="qualified",
+        x_y_connection_rewritten=True,
+        x_y_connection_rewrite="Training may reduce mistakes.",
+        x_y_connection_rewrite_comment=comment,
+    )
+    assert completion_issues(NuanceCoding(fields=fields)) == []
 
 
 def test_saved_rewrite_can_satisfy_connection_completeness() -> None:

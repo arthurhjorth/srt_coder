@@ -147,14 +147,17 @@ assigned to the same text field can have different comments. Dropdowns retain
 adjacent `*_comment` fields because they have no transcript span. All three
 objects also retain the general `coder_note` without a comment on that note.
 Nuance relation type accepts only problem explanation and expected effect.
-Nuance also has optional `x_y_connection_rewritten` and
-`x_y_connection_rewrite` fields. The checkbox identifies a coder-written
-connection and reveals a free-text field beside the original transcript
+Nuance also has optional `x_y_connection_rewritten`, `x_y_connection_rewrite`,
+and `x_y_connection_rewrite_comment` fields. The checkbox identifies a coder-written
+connection and reveals a free-text field with its own adjacent comment textarea.
+This comment attaches to the rewrite and never requires a transcript selection.
+Both fields are separate from the original transcript
 evidence. A checked, nonempty rewrite can satisfy the connection completeness
 warning without an explicit connection quotation. Unchecking retains the saved
-rewrite; its text is preserved in imports/exports and displayed neutrally in
-comparison. These additive fields default to `null` in older v5 data and need no
-disk migration.
+rewrite and comment; both are preserved in imports/exports and displayed neutrally
+in comparison. These additive fields default to `null` in older v5 data and need
+no disk migration. Missing, null, and empty rewrite comments are valid and never
+affect completeness or agreement calculations.
 
 Span comments are typed directly beside their coded excerpt and never require a
 second transcript selection. Span comments, dropdown comments, coder notes, and X–Y rewrites

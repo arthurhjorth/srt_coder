@@ -35,6 +35,8 @@ def test_nuance_rewrite_toggle_save_reload_and_completeness(tmp_path, monkeypatc
     monkeypatch.setattr(analysis_v5, "load_transcript", lambda _: TranscriptDocument(
         source_file=entry.interview_file, segments=[], speakers=[]
     ))
+    rewrite_marker = "x-y-connection-rewrite"
+    comment_marker = "x-y-connection-rewrite-comment"
 
     async def scenario() -> None:
         async with user_simulation(root=lambda: analysis_v5.render_analysis_page(entry.analysis_id)) as user:
@@ -42,28 +44,48 @@ def test_nuance_rewrite_toggle_save_reload_and_completeness(tmp_path, monkeypatc
                 "revision": 0, "payload": None,
             }
             await user.open("/")
-            await user.should_not_see(kind=ui.textarea, content="Omskrevet X–Y-forbindelse")
+            await user.should_not_see(kind=ui.textarea, marker=rewrite_marker)
+            await user.should_not_see(kind=ui.textarea, marker=comment_marker)
             user.find(kind=ui.checkbox, content="Omskrevet X–Y-forbindelse?").click()
-            await user.should_see(kind=ui.textarea, content="Omskrevet X–Y-forbindelse")
-            user.find(kind=ui.textarea, content="Omskrevet X–Y-forbindelse").type(
+            await user.should_see(kind=ui.textarea, marker=rewrite_marker)
+            await user.should_see(kind=ui.textarea, marker=comment_marker)
+            user.find(kind=ui.textarea, marker=rewrite_marker).type(
                 "  More training may reduce mistakes.  "
             ).trigger("blur")
             await user.should_see("Recommended fields complete.")
+            user.find(kind=ui.textarea, marker=comment_marker).type(
+                "  The causal connection is implicit here.  "
+            ).trigger("blur")
             loaded = repo.list_codings()[0]
             assert loaded.coding.fields.x_y_connection_rewritten is True
             assert loaded.coding.fields.x_y_connection_rewrite == "More training may reduce mistakes."
+            assert loaded.coding.fields.x_y_connection_rewrite_comment == "The causal connection is implicit here."
             assert loaded.coding.fields.x_y_connection is None
             assert loaded.field_spans == entry.field_spans
 
-            # Refresh from disk, then uncheck without deleting the stored rewrite.
+            # Refresh from disk, then uncheck without deleting the rewrite or comment.
             await user.open("/")
             await user.should_see("More training may reduce mistakes.")
+            await user.should_see("The causal connection is implicit here.")
             user.find(kind=ui.checkbox, content="Omskrevet X–Y-forbindelse?").click()
-            await user.should_not_see(kind=ui.textarea, content="Omskrevet X–Y-forbindelse")
+            await user.should_not_see(kind=ui.textarea, marker=rewrite_marker)
+            await user.should_not_see(kind=ui.textarea, marker=comment_marker)
             await user.should_see("X–Y-forbindelse mangler.")
             loaded = repo.list_codings()[0]
             assert loaded.coding.fields.x_y_connection_rewritten is False
             assert loaded.coding.fields.x_y_connection_rewrite == "More training may reduce mistakes."
+            assert loaded.coding.fields.x_y_connection_rewrite_comment == "The causal connection is implicit here."
+
+            # Empty comments remain valid, and clearing one preserves the rewrite and evidence.
+            user.find(kind=ui.checkbox, content="Omskrevet X–Y-forbindelse?").click()
+            await user.should_see(kind=ui.textarea, marker=comment_marker)
+            next(iter(user.find(kind=ui.textarea, marker=comment_marker).elements)).set_value("  ")
+            user.find(kind=ui.textarea, marker=comment_marker).trigger("blur")
+            await user.should_see("Recommended fields complete.")
+            loaded = repo.list_codings()[0]
+            assert loaded.coding.fields.x_y_connection_rewrite_comment is None
+            assert loaded.coding.fields.x_y_connection_rewrite == "More training may reduce mistakes."
+            assert loaded.field_spans == entry.field_spans
 
     asyncio.run(scenario())
 
@@ -73,7 +95,8 @@ def test_agreement_upload_shows_field_score_bullets_and_downloads(tmp_path, monk
     monkeypatch.setattr(agreement_v5, "require_auth_or_redirect", lambda: True)
     monkeypatch.setattr(agreement_v5, "top_nav", lambda: None)
     left = _entry("left", NuanceCoding(fields=NuanceFields(
-        x_y_connection_rewritten=True, x_y_connection_rewrite="Training reduces mistakes."
+        x_y_connection_rewritten=True, x_y_connection_rewrite="Training reduces mistakes.",
+        x_y_connection_rewrite_comment="The causal connection is implicit here.",
     )), {"nuance.x_y_connection": [
         _span(0, 5, text="first passage"), _span(20, 25, text="extra passage")
     ]})
@@ -93,6 +116,7 @@ def test_agreement_upload_shows_field_score_bullets_and_downloads(tmp_path, monk
             await user.should_see("Field agreement F1 100.0%")
             await user.should_see("extra passage")
             await user.should_see("Training reduces mistakes.")
+            await user.should_see("The causal connection is implicit here.")
             items = [item for item in user.current_layout.descendants() if item.tag == "li"]
             assert len(items) == 3
             user.find("Download JSON").click()

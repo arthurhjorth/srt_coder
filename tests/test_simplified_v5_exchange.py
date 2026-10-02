@@ -121,6 +121,7 @@ def test_nuance_rewrite_and_original_spans_survive_export_and_import(tmp_path, m
             x_y_connection="the original interview wording",
             x_y_connection_rewritten=True,
             x_y_connection_rewrite="Training may reduce mistakes.",
+            x_y_connection_rewrite_comment="The causal connection is implicit here.",
         )),
         "field_spans": {"nuance.x_y_connection": [TranscriptSpan(
             start_segment_id="seg-00001", start_char_offset=0,

@@ -75,6 +75,10 @@ class NuanceFields(CodingBookModel):
         default=None,
         description="The coder's rewritten X–Y connection, separate from transcript evidence.",
     )
+    x_y_connection_rewrite_comment: str | None = Field(
+        default=None,
+        description="Optional coder comment on the rewritten X–Y connection.",
+    )
     expressed_certainty: ExpressedCertainty | None = None
     expressed_certainty_comment: str | None = None
     limitation: str | None = None

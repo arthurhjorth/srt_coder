@@ -101,7 +101,11 @@ def _field_rows(entry: SimplifiedCodingEntry) -> list[tuple[str, str, Any, bool]
                     )
                 )
             if base == "x_y_connection":
-                for name in ("x_y_connection_rewritten", "x_y_connection_rewrite"):
+                for name in (
+                    "x_y_connection_rewritten",
+                    "x_y_connection_rewrite",
+                    "x_y_connection_rewrite_comment",
+                ):
                     rows.append((f"nuance.{name}", _label(name), getattr(fields, name), True))
     rows.append((f"{entry.object_type}.coder_note", FIELD_LABELS["coder_note"], fields.coder_note, True))
     return rows

@@ -666,6 +666,13 @@ def render_analysis_page(analysis_id: str) -> None:
             _persist(live, coding, rerender=False)
             status_label.set_text("Rewritten X–Y connection saved.")
 
+        def _save_x_y_rewrite_comment(entry: SimplifiedCodingEntry, value: str | None) -> None:
+            live = _current(entry)
+            coding = live.coding.model_copy(deep=True)
+            coding.fields.x_y_connection_rewrite_comment = (value or "").strip() or None
+            _persist(live, coding, rerender=False)
+            status_label.set_text("Rewritten X–Y connection comment saved.")
+
         def _render_x_y_rewrite(entry: SimplifiedCodingEntry) -> None:
             rewritten = ui.checkbox(
                 FIELD_LABELS["x_y_connection_rewritten"],
@@ -676,14 +683,27 @@ def render_analysis_page(analysis_id: str) -> None:
                     "Write the X–Y connection in your own words. The original interview "
                     "selections remain saved as evidence."
                 ).classes("text-xs text-gray-600")
-                rewrite = ui.textarea(
-                    FIELD_LABELS["x_y_connection_rewrite"],
-                    value=entry.coding.fields.x_y_connection_rewrite or "",
-                ).props("rows=3").classes("w-full")
-                rewrite.on(
-                    "blur",
-                    lambda _e, e=entry, element=rewrite: _save_x_y_rewrite(e, element.value),
-                )
+                with ui.row().classes("w-full items-start gap-3"):
+                    with ui.column().classes("flex-1 min-w-[240px] gap-1"):
+                        rewrite = ui.textarea(
+                            FIELD_LABELS["x_y_connection_rewrite"],
+                            value=entry.coding.fields.x_y_connection_rewrite or "",
+                        ).props("rows=3").classes("w-full").mark("x-y-connection-rewrite")
+                        rewrite.on(
+                            "blur",
+                            lambda _e, e=entry, element=rewrite: _save_x_y_rewrite(e, element.value),
+                        )
+                    with ui.column().classes("flex-1 min-w-[240px] gap-1"):
+                        comment = ui.textarea(
+                            _field_label("x_y_connection_rewrite_comment"),
+                            value=entry.coding.fields.x_y_connection_rewrite_comment or "",
+                        ).props("rows=3").classes("w-full").mark("x-y-connection-rewrite-comment")
+                        comment.on(
+                            "blur",
+                            lambda _e, e=entry, element=comment: _save_x_y_rewrite_comment(
+                                e, element.value
+                            ),
+                        )
             rewrite_container.set_visibility(bool(entry.coding.fields.x_y_connection_rewritten))
 
             def choice_changed(event) -> None:
