@@ -91,6 +91,25 @@ class AnnotationMatch:
 
 
 @dataclass(frozen=True)
+class FieldMatch:
+    left_coding_id: str
+    right_coding_id: str
+    left_field_path: str
+    right_field_path: str
+    annotation_matches: list[AnnotationMatch]
+
+
+@dataclass(frozen=True)
+class FieldAgreement:
+    true_positives: int
+    false_positives: int
+    false_negatives: int
+    precision: float
+    recall: float
+    f1: float
+
+
+@dataclass(frozen=True)
 class AgreementSource:
     source_index: int
     source_name: str
@@ -171,6 +190,8 @@ class PairAgreement:
     recall: float
     f1: float
     annotation_matches: list[AnnotationMatch]
+    field_matches: list[FieldMatch]
+    field_agreement: FieldAgreement
     object_alignments: list[ObjectAlignment]
     perspective_alignments: list[PerspectiveAlignment]
     parent_code_summaries: list[ParentCodeAgreementSummary]
@@ -219,7 +240,12 @@ class AgreementReport:
 def agreement_field_path_is_ignored(field_path: str) -> bool:
     final_name = re.split(r"\.|\]", field_path)[-1]
     return (
-        final_name in {"coder_note", "perspective_types"}
+        final_name in {
+            "coder_note",
+            "perspective_types",
+            "x_y_connection_rewritten",
+            "x_y_connection_rewrite",
+        }
         or final_name.endswith("_comment")
     )
 
@@ -480,6 +506,8 @@ def _build_pair(
     )
     alignments = _align_objects(left, right, rules)
     perspective_alignments = _align_perspectives(left, right, alignments, rules)
+    field_matches = _field_matches(left, right, alignments, perspective_alignments, rules)
+    field_agreement = _field_agreement(left, right, field_matches)
     aligned_left = {item.left_coding_id for item in alignments}
     aligned_right = {item.right_coding_id for item in alignments}
     unmatched_left_coding_ids = [
@@ -500,6 +528,8 @@ def _build_pair(
         recall=recall,
         f1=(2 * precision * recall / (precision + recall)) if precision + recall else 0.0,
         annotation_matches=matches,
+        field_matches=field_matches,
+        field_agreement=field_agreement,
         object_alignments=alignments,
         perspective_alignments=perspective_alignments,
         parent_code_summaries=_parent_code_summaries(
@@ -657,6 +687,116 @@ def _align_perspectives(
                 )
             )
     return aligned
+
+
+def _field_matches(
+    left: AgreementSource,
+    right: AgreementSource,
+    object_alignments: list[ObjectAlignment],
+    perspective_alignments: list[PerspectiveAlignment],
+    rules: AgreementRules,
+) -> list[FieldMatch]:
+    """Pair span collections within the displayed object pairs, once per field."""
+    left_fields = _annotations_by_field(left.annotations)
+    right_fields = _annotations_by_field(right.annotations)
+    perspective_pairs = {
+        (
+            item.left_coding_id,
+            item.right_coding_id,
+            item.left_perspective_index,
+            item.right_perspective_index,
+        )
+        for item in perspective_alignments
+    }
+    matched_fields: list[FieldMatch] = []
+    for alignment in object_alignments:
+        left_paths = sorted(left_fields.get(alignment.left_coding_id, {}))
+        right_paths = sorted(right_fields.get(alignment.right_coding_id, {}))
+        candidates: list[tuple[int, int, int]] = []
+        evidence: dict[tuple[int, int], list[AnnotationMatch]] = {}
+        for left_index, left_path in enumerate(left_paths):
+            for right_index, right_path in enumerate(right_paths):
+                left_perspective = _perspective_text_index(left_path)
+                right_perspective = _perspective_text_index(right_path)
+                if left_perspective is not None and right_perspective is not None:
+                    if (
+                        alignment.left_coding_id,
+                        alignment.right_coding_id,
+                        left_perspective,
+                        right_perspective,
+                    ) not in perspective_pairs:
+                        continue
+                matches = _annotation_matches(
+                    left_fields[alignment.left_coding_id][left_path],
+                    right_fields[alignment.right_coding_id][right_path],
+                    rules,
+                )
+                if not matches:
+                    continue
+                evidence[(left_index, right_index)] = matches
+                quality = max(match.quality for match in matches)
+                candidates.append((left_index, right_index, int(round(quality * 1_000_000))))
+        pairs = _weighted_maximum_cardinality_matching(
+            len(left_paths), len(right_paths), candidates
+        )
+        for left_index, right_index in pairs:
+            matched_fields.append(
+                FieldMatch(
+                    left_coding_id=alignment.left_coding_id,
+                    right_coding_id=alignment.right_coding_id,
+                    left_field_path=left_paths[left_index],
+                    right_field_path=right_paths[right_index],
+                    annotation_matches=evidence[(left_index, right_index)],
+                )
+            )
+    return matched_fields
+
+
+def _annotations_by_field(
+    annotations: list[NormalizedAnnotation],
+) -> dict[str, dict[str, list[NormalizedAnnotation]]]:
+    grouped: dict[str, dict[str, list[NormalizedAnnotation]]] = {}
+    for annotation in annotations:
+        grouped.setdefault(annotation.coding_id, {}).setdefault(
+            annotation.field_path, []
+        ).append(annotation)
+    return grouped
+
+
+def _field_agreement(
+    left: AgreementSource,
+    right: AgreementSource,
+    matches: list[FieldMatch],
+) -> FieldAgreement:
+    left_count = sum(len(fields) for fields in _annotations_by_field(left.annotations).values())
+    right_count = sum(len(fields) for fields in _annotations_by_field(right.annotations).values())
+    matched_count = len(matches)
+    precision = matched_count / left_count if left_count else 0.0
+    recall = matched_count / right_count if right_count else 0.0
+    return FieldAgreement(
+        true_positives=matched_count,
+        false_positives=left_count - matched_count,
+        false_negatives=right_count - matched_count,
+        precision=precision,
+        recall=recall,
+        f1=(2 * precision * recall / (precision + recall)) if precision + recall else 0.0,
+    )
+
+
+def field_has_agreement(
+    pair: PairAgreement, *, source_index: int, coding_id: str, field_path: str
+) -> bool:
+    if source_index == pair.left_source_index:
+        return any(
+            item.left_coding_id == coding_id and item.left_field_path == field_path
+            for item in pair.field_matches
+        )
+    if source_index == pair.right_source_index:
+        return any(
+            item.right_coding_id == coding_id and item.right_field_path == field_path
+            for item in pair.field_matches
+        )
+    return False
 
 
 def _parent_code_summaries(
@@ -957,6 +1097,11 @@ def report_as_json(report: AgreementReport) -> str:
     payload = {
         "coding_book_version": CODING_BOOK_VERSION,
         "rules": asdict(report.rules),
+        "metric_definitions": {
+            "field_agreement": "Each field counts once; any eligible span overlap inside its paired code is sufficient.",
+            "span_agreement": "Legacy top-level precision, recall, F1 and TP/FP/FN count individual spans.",
+            "rewrite": "Coder rewrites, comments and perspective types do not contribute to transcript agreement.",
+        },
         "sources": [
             {
                 "source_index": source.source_index,
@@ -996,6 +1141,12 @@ def report_as_csv(report: AgreementReport) -> str:
             "precision",
             "recall",
             "f1",
+            "field_true_positives",
+            "field_false_positives",
+            "field_false_negatives",
+            "field_precision",
+            "field_recall",
+            "field_f1",
             "categorical_matches",
             "categorical_total",
             "categorical_agreement",
@@ -1020,6 +1171,12 @@ def report_as_csv(report: AgreementReport) -> str:
             "precision": f"{pair.precision:.6f}",
             "recall": f"{pair.recall:.6f}",
             "f1": f"{pair.f1:.6f}",
+            "field_true_positives": pair.field_agreement.true_positives,
+            "field_false_positives": pair.field_agreement.false_positives,
+            "field_false_negatives": pair.field_agreement.false_negatives,
+            "field_precision": f"{pair.field_agreement.precision:.6f}",
+            "field_recall": f"{pair.field_agreement.recall:.6f}",
+            "field_f1": f"{pair.field_agreement.f1:.6f}",
             "categorical_matches": pair.categorical_matches,
             "categorical_total": pair.categorical_total,
             "categorical_agreement": (
@@ -1050,6 +1207,20 @@ def _pair_as_dict(pair: PairAgreement) -> dict[str, Any]:
         "precision": pair.precision,
         "recall": pair.recall,
         "f1": pair.f1,
+        "field_agreement": asdict(pair.field_agreement),
+        "field_matches": [
+            {
+                "left_coding_id": item.left_coding_id,
+                "right_coding_id": item.right_coding_id,
+                "left_field_path": item.left_field_path,
+                "right_field_path": item.right_field_path,
+                "annotation_matches": [
+                    {"left": match.left.key, "right": match.right.key, "quality": match.quality}
+                    for match in item.annotation_matches
+                ],
+            }
+            for item in pair.field_matches
+        ],
         "categorical_matches": pair.categorical_matches,
         "categorical_total": pair.categorical_total,
         "categorical_agreement": pair.categorical_agreement,

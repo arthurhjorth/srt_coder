@@ -24,8 +24,8 @@ from domain.simplified_agreement_service_v5 import (
     PARENT_CODE_ORDER,
     PairAgreement,
     build_agreement_report,
+    field_has_agreement,
     load_agreement_export,
-    matched_annotation_keys,
     report_as_csv,
     report_as_json,
 )
@@ -50,6 +50,8 @@ def _short(value: Any) -> str:
         return "(empty)"
     if isinstance(value, list):
         return ", ".join(str(getattr(item, "value", item)) for item in value) or "(empty)"
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
     return str(getattr(value, "value", value))
 
 
@@ -98,8 +100,103 @@ def _field_rows(entry: SimplifiedCodingEntry) -> list[tuple[str, str, Any, bool]
                         True,
                     )
                 )
+            if base == "x_y_connection":
+                for name in ("x_y_connection_rewritten", "x_y_connection_rewrite"):
+                    rows.append((f"nuance.{name}", _label(name), getattr(fields, name), True))
     rows.append((f"{entry.object_type}.coder_note", FIELD_LABELS["coder_note"], fields.coder_note, True))
     return rows
+
+
+def _categorical_status(
+    source: AgreementSource,
+    entry: SimplifiedCodingEntry,
+    path: str,
+    pair: PairAgreement,
+) -> str | None:
+    is_left = source.source_index == pair.left_source_index
+    for comparison in pair.categorical_comparisons:
+        expected_id = comparison.left_coding_id if is_left else comparison.right_coding_id
+        if expected_id != entry.coding_id:
+            continue
+        if comparison.field_path == path:
+            return "match" if comparison.agrees else "mismatch"
+        match = re.fullmatch(
+            r"differentiation\.perspectives\[(\d+):(\d+)\]\.perspective_types",
+            comparison.field_path,
+        )
+        current = re.fullmatch(
+            r"differentiation\.perspectives\[(\d+)\]\.perspective_types", path
+        )
+        if match and current:
+            side_index = int(match.group(1 if is_left else 2))
+            if int(current.group(1)) == side_index:
+                return "match" if comparison.agrees else "mismatch"
+    return None
+
+
+def _field_status(
+    source: AgreementSource,
+    entry: SimplifiedCodingEntry,
+    path: str,
+    pair: PairAgreement,
+) -> str:
+    categorical = _categorical_status(source, entry, path, pair)
+    if categorical is not None:
+        return categorical
+    if not any(
+        annotation.coding_id == entry.coding_id and annotation.field_path == path
+        for annotation in source.annotations
+    ):
+        return "neutral"
+    return (
+        "match"
+        if field_has_agreement(
+            pair, source_index=source.source_index, coding_id=entry.coding_id, field_path=path
+        )
+        else "mismatch"
+    )
+
+
+def _render_entry(
+    source: AgreementSource,
+    entry: SimplifiedCodingEntry,
+    pair: PairAgreement,
+) -> None:
+    with ui.card().classes("w-full shadow-none border gap-1"):
+        ui.label(_entry_title(entry)).classes("font-semibold")
+        ui.label(entry.coding_id).classes("font-mono text-[10px] text-gray-500")
+        for path, label, value, neutral in _field_rows(entry):
+            status_name = "neutral" if neutral else _field_status(source, entry, path, pair)
+            classes = {
+                "neutral": "bg-slate-50 border-slate-200 text-slate-800",
+                "match": "bg-emerald-50 border-emerald-300 text-emerald-950",
+                "mismatch": "bg-red-50 border-red-300 text-red-950",
+            }[status_name]
+            with ui.element("div").classes(f"w-full rounded border px-2 py-1 {classes}"):
+                ui.label(label).classes("text-[10px] font-semibold")
+                spans = entry.field_spans.get(path, [])
+                if spans:
+                    with ui.element("ul").classes("list-disc pl-5 space-y-2 w-full"):
+                        for span in spans:
+                            with ui.element("li"):
+                                ui.label(span.selected_text or "(no selected text)").classes(
+                                    "text-xs whitespace-pre-wrap"
+                                )
+                                ui.label(
+                                    f"{span.start_segment_id}:{span.start_char_offset}–"
+                                    f"{span.end_segment_id}:{span.end_char_offset}"
+                                ).classes("text-[10px] text-slate-600")
+                                if span.comment:
+                                    ui.label(f"Comment: {span.comment}").classes(
+                                        "text-xs whitespace-pre-wrap bg-slate-50 text-slate-800"
+                                    )
+                    combined = "\n".join(span.selected_text for span in spans)
+                    if value and str(value).strip() != combined.strip():
+                        ui.label(f"Saved field text: {_short(value)}").classes(
+                            "text-xs whitespace-pre-wrap"
+                        )
+                else:
+                    ui.label(_short(value)).classes("text-xs whitespace-pre-wrap")
 
 
 def _label(name: str) -> str:
@@ -148,7 +245,7 @@ def render_agreement_page() -> None:
             with ui.column().classes("gap-0"):
                 ui.label("Coding Agreement · v5").classes("text-2xl font-semibold")
                 ui.label(
-                    "Span agreement and scored categorical agreement are reported separately. "
+                    "Field agreement and scored categorical agreement are reported separately. "
                     "Perspective-type differences remain color-coded but are not scored. "
                     "Comments and coder notes are shown only for neutral review."
                 ).classes("text-sm text-gray-700")
@@ -330,89 +427,6 @@ def render_agreement_page() -> None:
                 ui.label(value).classes("text-xl font-semibold")
                 ui.label(label).classes("text-xs text-gray-600")
 
-        def _field_status(
-            source: AgreementSource,
-            entry: SimplifiedCodingEntry,
-            path: str,
-            pair: PairAgreement,
-        ) -> str:
-            categorical = _categorical_status(source, entry, path, pair)
-            if categorical is not None:
-                return categorical
-            matched = matched_annotation_keys(pair)
-            annotations = [
-                annotation
-                for annotation in source.annotations
-                if annotation.coding_id == entry.coding_id and annotation.field_path == path
-            ]
-            if not annotations:
-                return "neutral"
-            count = sum(annotation.key in matched for annotation in annotations)
-            if count == len(annotations):
-                return "match"
-            return "partial" if count else "mismatch"
-
-        def _categorical_status(
-            source: AgreementSource,
-            entry: SimplifiedCodingEntry,
-            path: str,
-            pair: PairAgreement,
-        ) -> str | None:
-            is_left = source.source_index == pair.left_source_index
-            for comparison in pair.categorical_comparisons:
-                expected_id = (
-                    comparison.left_coding_id if is_left else comparison.right_coding_id
-                )
-                if expected_id != entry.coding_id:
-                    continue
-                if comparison.field_path == path:
-                    return "match" if comparison.agrees else "mismatch"
-                match = re.fullmatch(
-                    r"differentiation\.perspectives\[(\d+):(\d+)\]\.perspective_types",
-                    comparison.field_path,
-                )
-                current = re.fullmatch(
-                    r"differentiation\.perspectives\[(\d+)\]\.perspective_types",
-                    path,
-                )
-                if match and current:
-                    side_index = int(match.group(1 if is_left else 2))
-                    if int(current.group(1)) == side_index:
-                        return "match" if comparison.agrees else "mismatch"
-            return None
-
-        def _render_entry(
-            source: AgreementSource,
-            entry: SimplifiedCodingEntry,
-            pair: PairAgreement,
-        ) -> None:
-            with ui.card().classes("w-full shadow-none border gap-1"):
-                ui.label(_entry_title(entry)).classes("font-semibold")
-                ui.label(entry.coding_id).classes("font-mono text-[10px] text-gray-500")
-                for path, label, value, neutral in _field_rows(entry):
-                    status_name = "neutral" if neutral else _field_status(source, entry, path, pair)
-                    classes = {
-                        "neutral": "bg-slate-50 border-slate-200 text-slate-800",
-                        "match": "bg-emerald-50 border-emerald-300 text-emerald-950",
-                        "partial": "bg-amber-50 border-amber-300 text-amber-950",
-                        "mismatch": "bg-red-50 border-red-300 text-red-950",
-                    }[status_name]
-                    with ui.element("div").classes(f"w-full rounded border px-2 py-1 {classes}"):
-                        ui.label(label).classes("text-[10px] font-semibold")
-                        ui.label(_short(value)).classes("text-xs whitespace-pre-wrap")
-                for path, spans in entry.field_spans.items():
-                    for index, span in enumerate(spans):
-                        if not span.comment:
-                            continue
-                        with ui.element("div").classes(
-                            "w-full rounded border px-2 py-1 bg-slate-50 "
-                            "border-slate-200 text-slate-800"
-                        ):
-                            ui.label(f"Span comment · {path} · #{index + 1}").classes(
-                                "text-[10px] font-semibold"
-                            )
-                            ui.label(span.comment).classes("text-xs whitespace-pre-wrap")
-
         def _render_parent_code_summary(
             report: AgreementReport,
             pair: PairAgreement,
@@ -434,25 +448,25 @@ def render_agreement_page() -> None:
             ui.label(
                 f"Selected comparison: {left_letter} ↔ {right_letter}"
             ).classes("text-xs text-gray-600")
-            ui.label("Object-level agreement overview").classes("text-lg font-semibold mt-2")
+            ui.label("Code-level agreement overview").classes("text-lg font-semibold mt-2")
             ui.label(
                 "Primary fields: Differentiation — Thing being considered; "
                 "Comparison — Thing A and Thing B; Nuance — Outcome or goal (Y)."
             ).classes("text-sm text-gray-700")
             ui.label(
-                "Paired objects is the number of one-to-one code-object pairs connected "
-                "by at least one eligible transcript-span overlap. Selections only need "
-                "to share some text; their boundaries do not need to be identical. "
-                "Paired objects equals PF overlap plus Non-PF-only. PF overlap "
-                "means the primary fields overlap. Non-PF-only means another field overlaps "
-                "but the primary fields do not. No overlap lists unpaired objects."
+                "Code-level agreement means that both coders used the same parent code on "
+                "interview text that overlaps. The marked passages do not need identical "
+                "boundaries. Code-level agreement equals Primary-field agreement plus "
+                "Other-field agreement only. Primary-field agreement means that the shared "
+                "text occurs in the code's primary field. Other-field agreement only means "
+                "that the codes share text elsewhere, but not in the primary field."
             ).classes("text-sm text-gray-700")
             ui.label(
-                "Matched perspective pairs counts individual one-to-one perspective-text "
-                "matches inside paired Differentiation objects. It is a perspective count, "
-                "not an object count, so it does not add up with the other columns. "
-                "Perspective-type choices are color-coded in the detailed view but excluded "
-                "from the categorical score."
+                "Perspective-text agreement counts individual Differentiation perspectives "
+                "whose marked text overlaps. It is a perspective count, not a parent-code "
+                "count, so it is separate from the code-level agreement total. "
+                "Perspective-type agreement and disagreement remain color-coded in the "
+                "detailed view but are excluded from every calculated agreement measure."
             ).classes("text-sm text-gray-700")
             rows = [
                 {
@@ -483,43 +497,43 @@ def render_agreement_page() -> None:
                 },
                 {
                     "name": "left_identified",
-                    "label": f"Coder {left_letter} identified",
+                    "label": f"Codes identified by {left_letter}",
                     "field": "left_identified",
                     "align": "right",
                 },
                 {
                     "name": "right_identified",
-                    "label": f"Coder {right_letter} identified",
+                    "label": f"Codes identified by {right_letter}",
                     "field": "right_identified",
                     "align": "right",
                 },
                 {
                     "name": "overlap",
-                    "label": "Paired objects",
+                    "label": "Code-level agreement",
                     "field": "overlap",
                     "align": "right",
                 },
                 {
                     "name": "primary",
-                    "label": "PF overlap",
+                    "label": "Primary-field agreement",
                     "field": "primary",
                     "align": "right",
                 },
                 {
                     "name": "perspectives",
-                    "label": "Matched perspective pairs",
+                    "label": "Perspective-text agreement",
                     "field": "perspectives",
                     "align": "right",
                 },
                 {
                     "name": "partial",
-                    "label": "Non-PF-only",
+                    "label": "Other-field agreement only",
                     "field": "partial",
                     "align": "right",
                 },
                 {
                     "name": "none",
-                    "label": "No overlap",
+                    "label": "Codes without a corresponding code",
                     "field": "none",
                     "align": "right",
                 },
@@ -571,9 +585,9 @@ def render_agreement_page() -> None:
                 return label
 
             status_labels = {
-                "primary_field_overlap": "PF overlap",
-                "partial_only": "Non-PF-only",
-                "no_overlap": "No overlap",
+                "primary_field_overlap": "Primary-field agreement",
+                "partial_only": "Other-field agreement only",
+                "no_overlap": "No corresponding code",
             }
             status_colors = {
                 "primary_field_overlap": "text-emerald-800",
@@ -636,7 +650,7 @@ def render_agreement_page() -> None:
             _render_parent_code_summary(report, pair)
 
             with ui.row().classes("w-full items-end justify-between gap-3 flex-wrap mt-2"):
-                ui.label("Detailed coding objects").classes("text-lg font-semibold")
+                ui.label("Detailed agreement review").classes("text-lg font-semibold")
                 order_select = ui.select(
                     options={
                         "grouped": "Parent code, then interview order",
@@ -675,9 +689,14 @@ def render_agreement_page() -> None:
             with ui.expansion("Focused transcript evidence", value=False).classes(
                 "w-full border rounded bg-white mt-2"
             ):
-                if not pair.annotation_matches:
+                evidence_matches = [
+                    match
+                    for field_match in pair.field_matches
+                    for match in field_match.annotation_matches
+                ]
+                if not evidence_matches:
                     ui.label("No matched transcript spans.").classes("text-sm text-gray-600")
-                for match in pair.annotation_matches:
+                for match in evidence_matches:
                     with ui.row().classes("w-full items-stretch no-wrap gap-3"):
                         for annotation in (match.left, match.right):
                             excerpt, local = _local_evidence(annotation)
@@ -700,6 +719,13 @@ def render_agreement_page() -> None:
                 return
             with report_container:
                 ui.label("2. Pairwise results").classes("text-xl font-semibold")
+                ui.label(
+                    "Each coded text field counts once. A field agrees when at least one "
+                    "of its passages overlaps with a passage in the corresponding field "
+                    "of the paired code. Additional passages do not reduce that field's "
+                    "agreement. Rewritten X–Y connections are shown for review; agreement "
+                    "uses the original interview spans."
+                ).classes("text-sm text-gray-700")
                 with ui.row().classes("w-full gap-2 flex-wrap"):
                     for pair in report.pair_agreements:
                         with ui.card().classes("min-w-[320px] shadow-sm gap-1"):
@@ -707,8 +733,9 @@ def render_agreement_page() -> None:
                                 "text-sm font-semibold"
                             )
                             ui.label(
-                                f"Span F1 {_percent(pair.f1)} · P {_percent(pair.precision)} · "
-                                f"R {_percent(pair.recall)}"
+                                f"Field agreement F1 {_percent(pair.field_agreement.f1)} · "
+                                f"P {_percent(pair.field_agreement.precision)} · "
+                                f"R {_percent(pair.field_agreement.recall)}"
                             ).classes("text-xs")
                             ui.label(
                                 f"Scored categorical agreement {_percent(pair.categorical_agreement)} "
@@ -757,9 +784,9 @@ def render_agreement_page() -> None:
                 pair = _selected_pair(report)
                 if pair is not None:
                     with ui.row().classes("w-full gap-2 flex-wrap"):
-                        _render_metric("Span precision", _percent(pair.precision))
-                        _render_metric("Span recall", _percent(pair.recall))
-                        _render_metric("Span F1", _percent(pair.f1))
+                        _render_metric("Field precision", _percent(pair.field_agreement.precision))
+                        _render_metric("Field recall", _percent(pair.field_agreement.recall))
+                        _render_metric("Field agreement F1", _percent(pair.field_agreement.f1))
                         _render_metric(
                             "Scored categorical", _percent(pair.categorical_agreement)
                         )
