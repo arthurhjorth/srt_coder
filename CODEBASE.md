@@ -147,9 +147,17 @@ assigned to the same text field can have different comments. Dropdowns retain
 adjacent `*_comment` fields because they have no transcript span. All three
 objects also retain the general `coder_note` without a comment on that note.
 Nuance relation type accepts only problem explanation and expected effect.
+Nuance also has optional `x_y_connection_rewritten` and
+`x_y_connection_rewrite` fields. The checkbox identifies a coder-written
+connection and reveals a free-text field beside the original transcript
+evidence. A checked, nonempty rewrite can satisfy the connection completeness
+warning without an explicit connection quotation. Unchecking retains the saved
+rewrite; its text is preserved in imports/exports and displayed neutrally in
+comparison. These additive fields default to `null` in older v5 data and need no
+disk migration.
 
 Span comments are typed directly beside their coded excerpt and never require a
-second transcript selection. Span comments, dropdown comments, and coder notes
+second transcript selection. Span comments, dropdown comments, coder notes, and X–Y rewrites
 are excluded from every agreement metric. Active span paths
 include, for example:
 
@@ -628,7 +636,15 @@ exact/normalized/ignored field paths, and optional same-code-type enforcement.
 
 Each source pair uses deterministic maximum-cardinality one-to-one span matching,
 then total overlap quality and stable ordering as tie-breakers. It reports
-TP/FP/FN, precision, recall, and F1. Coding objects of the same parent type are
+legacy per-span TP/FP/FN, precision, recall, and F1 in downloads. The active
+interface uses `field_agreement` instead: each field with eligible evidence
+counts once, and any overlapping span pair within the displayed coding-object
+pair is enough for agreement. Extra spans in that field do not lower its score.
+Field matching is one-to-one and remains scoped to the paired objects and
+perspectives, so an overlapping field in a different object cannot turn a field
+green. JSON includes `field_matches`, `field_agreement`, and metric definitions;
+CSV includes the new `field_*` scores alongside the retained span diagnostics.
+Coding objects of the same parent type are
 aligned by any overlapping coded span; the alignment then records separately
 whether their designated primary fields overlap. Perspectives inside aligned
 Differentiation objects are themselves paired one-to-one by overlapping
@@ -705,14 +721,14 @@ rule; exact matching remains available in the domain service and tests.
 
 For the selected source pair, an object-level table reports how many
 Differentiation, Comparison, and Nuance objects each coder identified. It splits
-one-to-one paired objects into primary-field overlaps and non-primary-field-only
-overlaps, and reports each coder's remaining no-overlap count. Object pairing
-uses any overlapping coded span; primary fields are the Differentiation focus
-topic, Comparison Thing A/Thing B, and Nuance outcome Y. The Differentiation row
-also reports one-to-one matched perspective pairs. This is an individual
-perspective count and is intentionally not part of the paired-object arithmetic.
-The surrounding help text distinguishes partial span intersection from the
-non-primary-field-only object classification.
+one-to-one code-level agreement into primary-field agreement and other-field
+agreement only, and reports each coder's codes without a corresponding code.
+The UI defines code-level agreement as the same parent code applied to
+overlapping interview text; selections need not have identical boundaries.
+Primary fields are the Differentiation focus topic, Comparison Thing A/Thing B,
+and Nuance outcome Y. The Differentiation row also reports one-to-one
+perspective-text agreement. This is an individual perspective count and is
+intentionally not part of the code-level agreement arithmetic.
 
 Above the table, every uploaded filename receives a stable display letter in
 current source order (`A`, `B`, `C`, and so on), and the selected pair is stated
@@ -721,12 +737,17 @@ explicitly. Table columns and detail cards reuse those letters.
 The detailed view combines aligned and no-overlap objects in one stream. It can
 group first by parent code and then transcript position, or interleave all three
 codes strictly by transcript position. Aligned objects appear side by side;
-unmatched objects use the same full card renderer in a single-coder card. Field
-colors use the concrete source, coding ID, path, and actual matched annotation;
-categorical dropdowns use their separate categorical result. Perspective types
+unmatched objects use the same full card renderer in a single-coder card. Each
+field's transcript spans are shown as individual bullet points with their
+coordinates and attached comments. Saved field text that differs from the span
+list remains visible. Field colors use the concrete source, coding ID, path, and
+field agreement within the displayed object pair; one overlapping span is
+sufficient for a green field even when additional spans differ.
+Categorical dropdowns use their separate categorical result. Perspective types
 retain this visual comparison even though they are excluded from the categorical
 score. Comments and coder notes are always neutral. Focused transcript evidence
-uses the local SRT where available and exported text/coordinates otherwise. The
+uses the agreed fields' actual overlaps, the local SRT where available, and
+exported text/coordinates otherwise. The
 old Mermaid, Sankey, and graph-heavy views remain only in preserved pages.
 
 `ui/pages/agreement.py` is the preserved legacy visualization and is not imported
