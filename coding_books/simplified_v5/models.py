@@ -67,6 +67,14 @@ class NuanceFields(CodingBookModel):
     influence_or_action_x: str | None = None
     outcome_or_goal_y: str | None = None
     x_y_connection: str | None = None
+    x_y_connection_rewritten: bool | None = Field(
+        default=None,
+        description="Whether the coder has rewritten the X–Y connection in their own words.",
+    )
+    x_y_connection_rewrite: str | None = Field(
+        default=None,
+        description="The coder's rewritten X–Y connection, separate from transcript evidence.",
+    )
     expressed_certainty: ExpressedCertainty | None = None
     expressed_certainty_comment: str | None = None
     limitation: str | None = None

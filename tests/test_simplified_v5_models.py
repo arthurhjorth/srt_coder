@@ -11,6 +11,7 @@ from coding_books.simplified_v5.models import (
     PerspectiveType,
     TranscriptSpan,
 )
+from coding_books.simplified_v5.validation import completion_issues
 
 
 def test_all_v5_coding_types_can_be_saved_empty() -> None:
@@ -66,3 +67,34 @@ def test_v5_rejects_ambition_intention() -> None:
                 "fields": {"relation_type": "ambition_intention"},
             }
         )
+
+
+def test_nuance_rewrite_is_optional_and_trims_outer_whitespace() -> None:
+    legacy = NuanceFields.model_validate({"x_y_connection": "original wording"})
+    assert legacy.x_y_connection_rewritten is None
+    assert legacy.x_y_connection_rewrite is None
+    rewritten = NuanceFields(
+        x_y_connection_rewritten=True,
+        x_y_connection_rewrite="  More training reduces mistakes.  ",
+    )
+    assert rewritten.x_y_connection_rewrite == "More training reduces mistakes."
+
+
+def test_saved_rewrite_can_satisfy_connection_completeness() -> None:
+    fields = NuanceFields(
+        relation_type="expected_effect",
+        influence_or_action_x="training",
+        outcome_or_goal_y="fewer mistakes",
+        expressed_certainty="qualified",
+        x_y_connection_rewritten=True,
+        x_y_connection_rewrite="Training may reduce mistakes.",
+    )
+    assert completion_issues(NuanceCoding(fields=fields)) == []
+    # A retained but unchecked rewrite does not act as active coding content.
+    fields.x_y_connection_rewritten = False
+    assert "X–Y-forbindelse mangler." in completion_issues(NuanceCoding(fields=fields))
+    fields.x_y_connection_rewritten = True
+    fields.x_y_connection_rewrite = " "
+    issues = completion_issues(NuanceCoding(fields=fields))
+    assert "X–Y-forbindelse mangler." in issues
+    assert "Omskrevet X–Y-forbindelse mangler." in issues

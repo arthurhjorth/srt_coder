@@ -11,7 +11,9 @@ from coding_books.simplified_v4.models import (
     NuanceRelationType as V4RelationType,
     SimplifiedCodingEntry as V4Entry,
 )
-from coding_books.simplified_v5.models import ComparisonCoding, SimplifiedCodingEntry
+from coding_books.simplified_v5.models import (
+    ComparisonCoding, NuanceCoding, NuanceFields, SimplifiedCodingEntry, TranscriptSpan,
+)
 from core_models import Analysis, User
 from domain import simplified_analysis_exchange_service_v5 as exchange
 
@@ -107,3 +109,45 @@ def test_hierarchical_v3_import_is_rejected_before_store_reads(monkeypatch) -> N
             }
         )
     assert touched == []
+
+
+def test_nuance_rewrite_and_original_spans_survive_export_and_import(tmp_path, monkeypatch) -> None:
+    analysis = Analysis(
+        analysis_id="analysis-1", owner_username="coder",
+        interview_file="interview.srt", name="Rewrite example",
+    )
+    coding = _v5_entry().model_copy(update={
+        "coding": NuanceCoding(fields=NuanceFields(
+            x_y_connection="the original interview wording",
+            x_y_connection_rewritten=True,
+            x_y_connection_rewrite="Training may reduce mistakes.",
+        )),
+        "field_spans": {"nuance.x_y_connection": [TranscriptSpan(
+            start_segment_id="seg-00001", start_char_offset=0,
+            end_segment_id="seg-00001", end_char_offset=35,
+            selected_text="the original interview wording", comment="original comment",
+        )]},
+    })
+    monkeypatch.setattr(exchange, "SIMPLIFIED_EXPORTS_DIR", tmp_path)
+    monkeypatch.setattr(exchange, "list_analyses", lambda: [analysis])
+    monkeypatch.setattr(exchange, "list_codings", lambda: [coding])
+    monkeypatch.setattr(exchange, "list_users", lambda: [User(username="coder")])
+    output = exchange.export_analysis_to_file(analysis_id="analysis-1")
+    original_bytes = output.read_bytes()
+    payload = json.loads(original_bytes)
+    original_payload = deepcopy(payload)
+
+    saved = {}
+    monkeypatch.setattr(exchange, "list_interview_files", lambda: ["interview.srt"])
+    monkeypatch.setattr(exchange, "list_analyses", lambda: [])
+    monkeypatch.setattr(exchange, "list_codings", lambda: [])
+    monkeypatch.setattr(exchange, "save_users", lambda values: saved.update(users=values))
+    monkeypatch.setattr(exchange, "save_analyses", lambda values: saved.update(analyses=values))
+    monkeypatch.setattr(exchange, "save_codings", lambda values: saved.update(codings=values))
+    report = exchange.import_analyses_from_payload(payload)
+    assert report["imported_codings"] == 1
+    imported = saved["codings"][0]
+    assert imported.coding.fields == coding.coding.fields
+    assert imported.field_spans == coding.field_spans
+    assert payload == original_payload
+    assert output.read_bytes() == original_bytes

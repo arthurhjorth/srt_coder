@@ -222,6 +222,7 @@ def render_analysis_page(analysis_id: str) -> None:
                 field_spans=field_spans,
             )
             _replace_entry(updated)
+            _update_card_header(updated)
             if field_spans is not None:
                 _refresh_transcript()
             if rerender:
@@ -651,6 +652,46 @@ def render_analysis_page(analysis_id: str) -> None:
             _persist(live, coding, rerender=False)
             status_label.set_text("Expressed certainty saved.")
 
+        def _save_x_y_rewritten(entry: SimplifiedCodingEntry, value: bool) -> None:
+            live = _current(entry)
+            coding = live.coding.model_copy(deep=True)
+            coding.fields.x_y_connection_rewritten = bool(value)
+            _persist(live, coding, rerender=False)
+            status_label.set_text("X–Y rewrite choice saved.")
+
+        def _save_x_y_rewrite(entry: SimplifiedCodingEntry, value: str | None) -> None:
+            live = _current(entry)
+            coding = live.coding.model_copy(deep=True)
+            coding.fields.x_y_connection_rewrite = (value or "").strip() or None
+            _persist(live, coding, rerender=False)
+            status_label.set_text("Rewritten X–Y connection saved.")
+
+        def _render_x_y_rewrite(entry: SimplifiedCodingEntry) -> None:
+            rewritten = ui.checkbox(
+                FIELD_LABELS["x_y_connection_rewritten"],
+                value=bool(entry.coding.fields.x_y_connection_rewritten),
+            )
+            with ui.column().classes("w-full gap-1") as rewrite_container:
+                ui.label(
+                    "Write the X–Y connection in your own words. The original interview "
+                    "selections remain saved as evidence."
+                ).classes("text-xs text-gray-600")
+                rewrite = ui.textarea(
+                    FIELD_LABELS["x_y_connection_rewrite"],
+                    value=entry.coding.fields.x_y_connection_rewrite or "",
+                ).props("rows=3").classes("w-full")
+                rewrite.on(
+                    "blur",
+                    lambda _e, e=entry, element=rewrite: _save_x_y_rewrite(e, element.value),
+                )
+            rewrite_container.set_visibility(bool(entry.coding.fields.x_y_connection_rewritten))
+
+            def choice_changed(event) -> None:
+                _save_x_y_rewritten(entry, bool(event.value))
+                rewrite_container.set_visibility(bool(event.value))
+
+            rewritten.on_value_change(choice_changed)
+
         def _render_select_with_comment(
             entry: SimplifiedCodingEntry,
             *,
@@ -696,7 +737,11 @@ def render_analysis_page(analysis_id: str) -> None:
             for field_name, required, help_text in (
                 ("influence_or_action_x", True, "The cause, condition, action, or plan linked to Y."),
                 ("outcome_or_goal_y", True, "The condition, change, effect, or goal linked to X."),
-                ("x_y_connection", True, "The speaker's wording that links X and Y."),
+                (
+                    "x_y_connection", False,
+                    "Select the speaker's wording that links X and Y, or record a "
+                    "rewritten connection below when the link is implicit.",
+                ),
             ):
                 _render_field_pair(
                     entry,
@@ -704,6 +749,8 @@ def render_analysis_page(analysis_id: str) -> None:
                     required=required,
                     help_text=help_text,
                 )
+                if field_name == "x_y_connection":
+                    _render_x_y_rewrite(entry)
             _render_select_with_comment(
                 entry,
                 field_name="expressed_certainty",
@@ -734,8 +781,26 @@ def render_analysis_page(analysis_id: str) -> None:
             if isinstance(entry.coding, ComparisonCoding):
                 return fields.text_passage or fields.relation or "No comparison text yet"
             if isinstance(entry.coding, NuanceCoding):
-                return fields.x_y_connection or fields.outcome_or_goal_y or "No X–Y relation yet"
+                return (
+                    (fields.x_y_connection_rewrite if fields.x_y_connection_rewritten else None)
+                    or fields.x_y_connection
+                    or fields.outcome_or_goal_y
+                    or "No X–Y relation yet"
+                )
             return ""
+
+        def _update_card_header(entry: SimplifiedCodingEntry) -> None:
+            header = state.get("card_headers", {}).get(entry.coding_id)
+            if header is None:
+                return
+            title, completeness = header
+            title.set_text(f"{CODE_TYPE_LABELS[entry.object_type]} — {_summary(entry)}")
+            issues = completion_issues(entry.coding)
+            completeness.set_text(" · ".join(issues) if issues else "Recommended fields complete.")
+            completeness.classes(
+                remove="text-amber-700 text-green-700",
+                add="text-amber-700" if issues else "text-green-700",
+            )
 
         def _render_card(entry: SimplifiedCodingEntry) -> None:
             issues = completion_issues(entry.coding)
@@ -753,13 +818,11 @@ def render_analysis_page(analysis_id: str) -> None:
             with expansion.add_slot("header"):
                 with ui.row().classes("w-full items-center justify-between pr-2 no-wrap"):
                     with ui.column().classes("gap-0 flex-1"):
-                        ui.label(header_label).classes("text-sm font-medium")
-                        if issues:
-                            ui.label(" · ".join(issues)).classes("text-xs text-amber-700")
-                        else:
-                            ui.label("Recommended fields complete.").classes(
-                                "text-xs text-green-700"
-                            )
+                        title = ui.label(header_label).classes("text-sm font-medium")
+                        completeness = ui.label(
+                            " · ".join(issues) if issues else "Recommended fields complete."
+                        ).classes("text-xs text-amber-700" if issues else "text-xs text-green-700")
+                        state.setdefault("card_headers", {})[entry.coding_id] = (title, completeness)
                     button = ui.button("Delete object").props(
                         "flat dense color=negative"
                     )

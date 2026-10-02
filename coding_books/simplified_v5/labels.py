@@ -27,6 +27,8 @@ FIELD_LABELS = {
     "influence_or_action_x": "Påvirkning eller handling (X)",
     "outcome_or_goal_y": "Udfald eller mål (Y)",
     "x_y_connection": "X–Y-forbindelse",
+    "x_y_connection_rewritten": "Omskrevet X–Y-forbindelse?",
+    "x_y_connection_rewrite": "Omskrevet X–Y-forbindelse",
     "expressed_certainty": "Udtrykt sikkerhed",
     "limitation": "Afgrænsning",
     "coder_note": "Kodernote",

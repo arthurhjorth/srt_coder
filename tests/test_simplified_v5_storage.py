@@ -122,3 +122,33 @@ def test_invalid_neutral_store_is_rejected_without_rewrite(tmp_path, monkeypatch
     with pytest.raises(ValueError, match="not coding book v5"):
         repo.list_codings()
     assert path.read_bytes() == original
+
+
+def test_nuance_rewrite_round_trips_without_changing_original_evidence(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(repo, "SIMPLIFIED_CODINGS_JSON", tmp_path / "codings_simplified.json")
+    created = service.create_object_entry(
+        analysis_id="analysis-1", interview_file="interview.srt",
+        object_type="nuance", created_by="coder",
+    )
+    coding = created.coding.model_copy(deep=True)
+    coding.fields.x_y_connection = "original wording"
+    coding.fields.x_y_connection_rewritten = True
+    coding.fields.x_y_connection_rewrite = "More training reduces mistakes."
+    evidence = {"nuance.x_y_connection": [_span("original wording")]}
+    service.update_entry_payload(
+        analysis_id="analysis-1", coding_id=created.coding_id,
+        coding=coding, field_spans=evidence,
+    )
+    loaded = repo.list_codings()[0]
+    assert loaded.coding.fields.x_y_connection_rewritten is True
+    assert loaded.coding.fields.x_y_connection_rewrite == "More training reduces mistakes."
+    assert loaded.coding.fields.x_y_connection == "original wording"
+    assert loaded.field_spans == evidence
+    coding = loaded.coding.model_copy(deep=True)
+    coding.fields.x_y_connection_rewritten = False
+    service.update_entry_payload(
+        analysis_id="analysis-1", coding_id=created.coding_id, coding=coding,
+    )
+    loaded = repo.list_codings()[0]
+    assert loaded.coding.fields.x_y_connection_rewrite == "More training reduces mistakes."
+    assert loaded.field_spans == evidence

@@ -42,10 +42,16 @@ def completion_issues(coding: SimplifiedCoding) -> list[str]:
         for name, label in (
             ("influence_or_action_x", "Påvirkning eller handling (X)"),
             ("outcome_or_goal_y", "Udfald eller mål (Y)"),
-            ("x_y_connection", "X–Y-forbindelse"),
         ):
             if not _has_text(getattr(coding.fields, name)):
                 issues.append(f"{label} mangler.")
+        has_rewrite = bool(coding.fields.x_y_connection_rewritten) and _has_text(
+            coding.fields.x_y_connection_rewrite
+        )
+        if not _has_text(coding.fields.x_y_connection) and not has_rewrite:
+            issues.append("X–Y-forbindelse mangler.")
+        if coding.fields.x_y_connection_rewritten and not has_rewrite:
+            issues.append("Omskrevet X–Y-forbindelse mangler.")
         if coding.fields.expressed_certainty is None:
             issues.append("Udtrykt sikkerhed mangler.")
         return issues
